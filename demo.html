@@ -39,7 +39,7 @@ let player_y = 0;
 let grav_direction = 1;
 let player_y_velocity = 0;
 
-let obstacle_generation_x = 0;
+let obstacle_generation_x = 600;
 
 const PLAYER_RADIUS = 20;
 const SIDE_BARS_WIDTH = 22;
@@ -52,6 +52,10 @@ const obstacles = [{
     h: 30,
     c: '#0F0'
 }];
+
+function lerp(start, end, x) {
+    return start + Math.max(0, Math.min(1, x)) * (end - start)
+}
 
 function recalculate_sizing() {
     height = 768;
@@ -85,21 +89,42 @@ function render() {
 
     ctx.fillRect(player_x - PLAYER_RADIUS - cam_x, player_y - PLAYER_RADIUS, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
 
-    for(let height_offset = SIDE_BARS_WIDTH; height_offset <= height; height_offset += (height - SIDE_BARS_WIDTH * 3)) {
+    function render_side_bars(is_top) {
+        const height_offset = is_top ? SIDE_BARS_WIDTH : height - 2 * SIDE_BARS_WIDTH;
+
         line(0, height_offset, width, 0);
         line(0, height_offset + SIDE_BARS_WIDTH, width, 0);
         for(let x = -5; x < width + 5; x += BAR_INSCRIPTION_PERIOD) {
-            line(x - ((cam_x) % BAR_INSCRIPTION_PERIOD), height_offset, SIDE_BARS_WIDTH, SIDE_BARS_WIDTH);
+            line(x - ((cam_x) % BAR_INSCRIPTION_PERIOD), height_offset, (is_top ? 1 : -1) * SIDE_BARS_WIDTH, SIDE_BARS_WIDTH);
         }
     }
 
+    render_side_bars(true);
+    render_side_bars(false);
+}
+
+function do_two_boxes_collide(b1, b2) {
+    return b1.x < b2.x + b2.w && b1.x + b1.w > b2.x && b1.y < b2.y + b2.h && b1.y + b1.h > b2.y;
+}
+
+function do_death() {
+    render();
+    setTimeout(() => {
+        alert('Oh well...');
+        window.location.reload();
+    }, 10);
+    throw Error('ya bad');
+}
+
+function invert_obstacle_y(o) {
+    o.y = height - o.h - o.y;
 }
 
 function update(dt) {
     player_x += dt * 80;
     cam_x = player_x - 400;
 
-    player_y_velocity += dt * grav_direction * 80;
+    player_y_velocity += dt * grav_direction * 150;
     player_y += player_y_velocity * dt;
 
     let latch_y = 2 * SIDE_BARS_WIDTH + PLAYER_RADIUS;
@@ -114,46 +139,84 @@ function update(dt) {
         player_y_velocity = 0;
     }
 
+    const player_box = {
+        x: player_x - PLAYER_RADIUS,
+        y: player_y - PLAYER_RADIUS,
+        w: PLAYER_RADIUS * 2,
+        h: PLAYER_RADIUS * 2
+    };
+
+    obstacles.forEach(o => {
+        if(o.do_collision && do_two_boxes_collide(player_box, o)) {
+            o.do_collision();
+        }
+    });
+
     while(obstacles.length) {
-        if(obstacles[0].x + obstacles[0].w - cam_x >= 0) {
+        if(!obstacles[0].inactive && obstacles[0].x + obstacles[0].w - cam_x >= 0) {
             break;
         }
         // debugger;
         obstacles.shift();
     }
 
-    if(obstacle_generation_x < cam_x + width + 100) {
+    while(obstacle_generation_x < cam_x + width + 100) {
         const decision = Math.random();
+        const new_obstacles = [];
 
         if(decision < 0.3) {
-            for(let i = 0; i < 20; ++i) {
-                if(Math.random() > 0.8) {
-                    obstacles.push({
-                        x: obstacle_generation_x,
-                        y: (Math.random() > 0.5) ? 2 * SIDE_BARS_WIDTH : (height - 2 * SIDE_BARS_WIDTH - 80),
-                        w: 20,
-                        h: 80,
-                        c: '#F00'
-                    });
-                    obstacle_generation_x += 60;
-                } else {
-                    obstacle_generation_x += 20;
+            // TYPE 1: A bunch of still(?) meteorites which requires active dodging
+            // Floor is occasionally dead
+            // TODO: Do the floor, and carve out from the obstacles a path to ensure
+            // that it's actuall possible
+            obstacle_generation_x += 120;
+            const start_of_obstacle_x = obstacle_generation_x;
+            let target_x = obstacle_generation_x + lerp(8000, 1600, Math.random());
+            while(obstacle_generation_x < target_x) {
+                const half_height_range = lerp(
+                    height / 8, height / 2,
+                    (obstacle_generation_x - start_of_obstacle_x) / 300
+                );
+
+                new_obstacles.push({
+                    x: obstacle_generation_x,
+                    y: lerp(2 * SIDE_BARS_WIDTH, half_height_range, Math.random()),
+                    w: 20,
+                    h: 20,
+                    c: '#F00',
+                    do_collision: do_death
+                });
+
+                if(Math.random() > 0.5) {
+                    invert_obstacle_y(new_obstacles[new_obstacles.length - 1]);
                 }
+
+                obstacle_generation_x += lerp(60, 80, Math.random());
             }
+            obstacle_generation_x += 120;
+
         } else if(decision < 0.6) {
             obstacle_generation_x += 120;
-            obstacles.push({
+            new_obstacles.push({
                 x: obstacle_generation_x,
                 y: height / 2 - 200,
                 w: 80,
                 h: 400,
-                c: '#F00'
+                c: '#F00',
+                do_collision: do_death
             });
-            obstacle_generation_x += 120;
+            obstacle_generation_x += 160;
         } else {
             // do nothing for a bit
             obstacle_generation_x += 100;
         }
+
+        new_obstacles.sort((a, b) => a.x - b.x);
+
+        if(Math.random() > 0.5) {
+            new_obstacles.forEach(o => invert_obstacle_y(o));
+        }
+        obstacles.push(...new_obstacles);
     }
 }
 
