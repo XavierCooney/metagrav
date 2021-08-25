@@ -94,7 +94,7 @@ function render() {
 
         line(0, height_offset, width, 0);
         line(0, height_offset + SIDE_BARS_WIDTH, width, 0);
-        for(let x = -5; x < width + 5; x += BAR_INSCRIPTION_PERIOD) {
+        for(let x = -5; x <= width + BAR_INSCRIPTION_PERIOD; x += BAR_INSCRIPTION_PERIOD) {
             line(x - ((cam_x) % BAR_INSCRIPTION_PERIOD), height_offset, (is_top ? 1 : -1) * SIDE_BARS_WIDTH, SIDE_BARS_WIDTH);
         }
     }
