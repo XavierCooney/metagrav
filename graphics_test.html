@@ -31,9 +31,83 @@ const height = 500;
 c.width = width;
 c.height = height;
 
-function render() {
-    ctx.clearRect(width, height);
+function lerp(start, end, x) {
+    return start + Math.max(0, Math.min(1, x)) * (end - start)
 }
+
+function render1() {
+    ctx.clearRect(0, 0, width, height);
+
+    const NUM = 30;
+    for(let i = 0; i < NUM; ++i) {
+        ctx.save();
+        ctx.translate(
+            Math.sin(new Date() / 250 + i / NUM * Math.PI * 2) * 5,
+            i * 100 / NUM + Math.sin(new Date() / 300 + i / NUM * Math.PI * 2) * 5
+        );
+        ctx.beginPath();
+        ctx.moveTo(250, 50);
+        ctx.lineTo(50, 300);
+        ctx.lineTo(450, 300);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.fillStyle = '#FFF';
+        ctx.fill();
+        ctx.restore();
+    }
+    requestAnimationFrame(render);
+}
+
+function triangle(x) {
+    return 2 * Math.abs(x - Math.floor(x + 1/2));
+}
+
+function render2() {
+    ctx.clearRect(0, 0, width, height);
+
+    const NUM = 30;
+    for(let x = 50; x <= 450; x += 0.5) {
+        const xx = x / 3;
+        const y = Math.sin(xx) * 10 + Math.sin(xx / 2.1) * 6 + 14 * triangle(xx / 3 + (new Date() / 1300)) + 28 * triangle(xx / 4 - (new Date() / 2000));
+        ctx.fillRect(x, 250 - y / 4, 3, 3);
+    }
+
+    requestAnimationFrame(render2);
+}
+
+
+function render3() {
+    ctx.clearRect(0, 0, width, height);
+
+    function f(x) {
+        let xx = x / 3;
+        return Math.sin(xx) * 10 + Math.sin(xx / 2.1) * 6 + 14 * Math.sin(xx / 3 + (new Date() / 1300)) + 28 * Math.sin(xx / 4 - (new Date() / 2000));
+        // return Math.sin(xx) * 500;
+    }
+
+    let x_offset = 0;
+    function line(x, y, dx, dy) {
+        let length = Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2));
+
+        for(let t = 0; t < 1; t += 1e-4) {
+            debugger;
+            ctx.fillRect(
+                lerp(x, x + dx, t) + f(t * length + x_offset) / 4,
+                lerp(y, y + dy, t) + f(t * length + x_offset) / 4,
+                3, 3
+            );
+        }
+        x_offset += length;
+    }
+
+    line(100, 100, 300, 0); // -> (400, 100)
+    line(400, 100, 0, 300); // -> (400, 100)
+
+    requestAnimationFrame(render3);
+}
+
+
+render2();
 </script>
 </body>
 </html>
