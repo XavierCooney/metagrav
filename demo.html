@@ -47,13 +47,7 @@ const PLAYER_RADIUS = 20;
 const SIDE_BARS_WIDTH = 22;
 const BAR_INSCRIPTION_PERIOD = 30;
 
-const obstacles = [{
-    x: 200,
-    y: 400,
-    w: 30,
-    h: 30,
-    c: '#0F0'
-}];
+const obstacles = [];
 
 function lerp(start, end, x) {
     return start + Math.max(0, Math.min(1, x)) * (end - start)
@@ -132,6 +126,7 @@ function got_coin(obstacle) {
 
 function invert_obstacle_y(o) {
     o.y = height - o.h - o.y;
+    return o;
 }
 
 function update(dt) {
@@ -215,7 +210,7 @@ function update(dt) {
                 obstacle_generation_x += lerp(60, 80, Math.random());
             }
             obstacle_generation_x += 120;
-        } else if(decision < 0.5) {
+        } else if(decision < 0.6) {
             // Random middle separator
             obstacle_generation_x += 180;
             new_obstacles.push({
@@ -227,14 +222,69 @@ function update(dt) {
                 do_collision: do_death
             });
             obstacle_generation_x += 180;
-        } else if(decision < 0.7 && 0) {
+        } else if(decision < 0.9) {
             // Type 2: Pillars of doom
-            let current_intended_pos = 0; // -1 = top, 0 = middle, 1 = bottom
+            // let current_intended_pos = 0; // -1 = top, 0 = middle, 1 = bottom
 
-            const start_of_obstacle_x = obstacle_generation_x;
+            const start_of_obstacle_x = (obstacle_generation_x += 120);
             let target_x = obstacle_generation_x + lerp(8000, 1600, Math.random());
             while(obstacle_generation_x < target_x) {
-                obstacle_generation_x += 1;
+                const sub_decision = Math.random();
+                if(sub_decision < 0.2) {
+                    // Middle
+                    obstacle_generation_x += 150;
+                    const new_obstacle = {
+                        x: obstacle_generation_x,
+                        y: SIDE_BARS_WIDTH * 2,
+                        w: 80,
+                        h: 200,
+                        c: '#F00',
+                        do_collision: do_death
+                    };
+                    new_obstacles.push(new_obstacle);
+                    new_obstacles.push(invert_obstacle_y(Object.assign({}, new_obstacle)));
+
+                    if(Math.random() > 0.8) {
+                        new_obstacles.push({
+                            x: obstacle_generation_x + 40 - 10,
+                            y: height / 2 - 10,
+                            w: 20,
+                            h: 20,
+                            c: '#0F0',
+                            do_collision: got_coin
+                        });
+                    }
+
+                    obstacle_generation_x += 250;
+                } else if(sub_decision < 0.6) {
+                    obstacle_generation_x += 150;
+                    const new_obstacle = {
+                        x: obstacle_generation_x,
+                        y: SIDE_BARS_WIDTH * 2,
+                        w: 80,
+                        h: 400,
+                        c: '#F00',
+                        do_collision: do_death
+                    };
+                    if(Math.random() > 0.5) {
+                        invert_obstacle_y(new_obstacle);
+                    }
+                    new_obstacles.push(new_obstacle);
+                    // new_obstacles.push(invert_obstacle_y(Object.assign({}, new_obstacle)));
+
+                    // if(Math.random() > 0.8) {
+                    //     new_obstacles.push({
+                    //         x: obstacle_generation_x + 40 - 10,
+                    //         y: height / 2 - 10,
+                    //         w: 20,
+                    //         h: 20,
+                    //         c: '#0F0',
+                    //         do_collision: got_coin
+                    //     });
+                    // }
+
+                    obstacle_generation_x += 250;
+                }
             }
         } else {
             // do nothing for a bit
@@ -270,12 +320,21 @@ function frame() {
 
 frame();
 
+function do_grav_switch() {
+    grav_direction *= -1;
+    player_y_velocity /= 3;
+}
+
 window.addEventListener('keydown', e => {
     console.log(e);
     if(e.code == 'Space') {
-        grav_direction *= -1;
-        player_y_velocity /= 3;
+        do_grav_switch();
     }
+});
+
+window.addEventListener('touchstart', e => {
+    console.log(e);
+    do_grav_switch();
 });
 
 </script>
