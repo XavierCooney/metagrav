@@ -41,6 +41,8 @@ let player_y_velocity = 0;
 
 let obstacle_generation_x = 600;
 
+let forward_speed = 110;
+
 const PLAYER_RADIUS = 20;
 const SIDE_BARS_WIDTH = 22;
 const BAR_INSCRIPTION_PERIOD = 30;
@@ -81,6 +83,7 @@ function render() {
     ctx.clearRect(0, 0, width, height);
 
     obstacles.forEach(o => {
+        if(o.inactive) return;
         ctx.save();
         ctx.fillStyle = o.c;
         ctx.fillRect(o.x - cam_x, o.y, o.w, o.h);
@@ -101,6 +104,11 @@ function render() {
 
     render_side_bars(true);
     render_side_bars(false);
+
+    ctx.textBaseline = 'hanging';
+    ctx.textAlign = 'start';
+    ctx.font = '48px sans-serif';
+    ctx.fillText(`Score: ${score}`, 20, SIDE_BARS_WIDTH * 3);
 }
 
 function do_two_boxes_collide(b1, b2) {
@@ -116,12 +124,18 @@ function do_death() {
     throw Error('ya bad');
 }
 
+var score = 0;
+function got_coin(obstacle) {
+    obstacle.inactive = true;
+    score += 1;
+}
+
 function invert_obstacle_y(o) {
     o.y = height - o.h - o.y;
 }
 
 function update(dt) {
-    player_x += dt * 80;
+    player_x += dt * forward_speed;
     cam_x = player_x - 400;
 
     player_y_velocity += dt * grav_direction * 150;
@@ -147,8 +161,8 @@ function update(dt) {
     };
 
     obstacles.forEach(o => {
-        if(o.do_collision && do_two_boxes_collide(player_box, o)) {
-            o.do_collision();
+        if(!o.inactive && o.do_collision && do_two_boxes_collide(player_box, o)) {
+            o.do_collision(o);
         }
     });
 
@@ -175,17 +189,24 @@ function update(dt) {
             while(obstacle_generation_x < target_x) {
                 const half_height_range = lerp(
                     height / 8, height / 2,
-                    (obstacle_generation_x - start_of_obstacle_x) / 300
+                    (obstacle_generation_x - start_of_obstacle_x) / 1000
                 );
-
-                new_obstacles.push({
+                const new_y = lerp(2 * SIDE_BARS_WIDTH, half_height_range, Math.random());
+                const new_obstacle = {
                     x: obstacle_generation_x,
-                    y: lerp(2 * SIDE_BARS_WIDTH, half_height_range, Math.random()),
+                    y: new_y,
                     w: 20,
                     h: 20,
                     c: '#F00',
                     do_collision: do_death
-                });
+                };
+
+                if(new_y > height / 3 && Math.random() > 0.7) {
+                    new_obstacle.c = '#0F0';
+                    new_obstacle.do_collision = got_coin;
+                }
+
+                new_obstacles.push(new_obstacle);
 
                 if(Math.random() > 0.5) {
                     invert_obstacle_y(new_obstacles[new_obstacles.length - 1]);
@@ -194,9 +215,9 @@ function update(dt) {
                 obstacle_generation_x += lerp(60, 80, Math.random());
             }
             obstacle_generation_x += 120;
-
-        } else if(decision < 0.6) {
-            obstacle_generation_x += 120;
+        } else if(decision < 0.5) {
+            // Random middle separator
+            obstacle_generation_x += 180;
             new_obstacles.push({
                 x: obstacle_generation_x,
                 y: height / 2 - 200,
@@ -205,7 +226,16 @@ function update(dt) {
                 c: '#F00',
                 do_collision: do_death
             });
-            obstacle_generation_x += 160;
+            obstacle_generation_x += 180;
+        } else if(decision < 0.7 && 0) {
+            // Type 2: Pillars of doom
+            let current_intended_pos = 0; // -1 = top, 0 = middle, 1 = bottom
+
+            const start_of_obstacle_x = obstacle_generation_x;
+            let target_x = obstacle_generation_x + lerp(8000, 1600, Math.random());
+            while(obstacle_generation_x < target_x) {
+                obstacle_generation_x += 1;
+            }
         } else {
             // do nothing for a bit
             obstacle_generation_x += 100;
@@ -227,7 +257,13 @@ function frame() {
     let dt = Math.min((this_frame_time - last_frame_time) / 1000, 1 / 15);
     elapsed_time += dt;
 
-    update(dt);
+    dt *= 1;
+
+    const SUBSTEPS = 4;
+    for(let substep = 0; substep < SUBSTEPS; ++substep) {
+        update(dt / SUBSTEPS);
+    }
+
     render();
     requestAnimationFrame(frame);
 }
