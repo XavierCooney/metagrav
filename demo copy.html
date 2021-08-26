@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>js13k gameplay test</title>
+    <style>
+          * {
+            box-sizing: border-box;
+        }
+        canvas {
+            /* border: 3px solid red; */
+            position: fixed;
+            left: 0px;
+            top: 0px;
+            width: 100%;
+            height: 100%;
+            z-index: -5;
+        }
+    </style>
+</head>
+<body>
+<canvas id="c">
+</canvas>
+<script>const o=document.getElementById("c"),t=o.getContext("2d");let n,e,c=0,i=0,l=0,s=0,a=1,h=0,r=600;const f=[];function w(o,t,n){return o+Math.max(0,Math.min(1,n))*(t-o)}function u(){e=768,n=e*o.clientWidth/o.clientHeight,o.width=n,o.height=e}function d(o,n,e,c){t.lineWidth=2,t.beginPath(),t.moveTo(o,n),t.lineTo(o+e,n+c),t.stroke()}function M(){function o(o){const t=o?22:e-44;d(0,t,n,0),d(0,t+22,n,0);for(let e=-5;e<=n+30;e+=30)d(e-l%30,t,22*(o?1:-1),22)}t.clearRect(0,0,n,e),f.forEach((o=>{o.o||(t.save(),t.fillStyle=o.c,t.fillRect(o.x-l,o.y,o.w,o.t),t.restore())})),t.fillRect(i-20-l,s-20,40,40),o(!0),o(!1),t.textBaseline="hanging",t.textAlign="start",t.font="48px sans-serif",t.fillText(`Score: ${x}`,20,66)}function y(){throw M(),setTimeout((()=>{alert("Oh well..."),window.location.reload()}),10),Error("ya bad")}window.addEventListener("resize",u),u(),s=e/2;var x=0;function F(o){o.o=!0,x+=1}function _(o){return o.y=e-o.t-o.y,o}function m(o){i+=110*o,l=i-400,h+=o*a*150,s+=h*o;s<64&&(s=64,h=0),s>e-64&&(s=e-64,h=0);const t={x:i-20,y:s-20,w:40,t:40};for(f.forEach((o=>{var n,e;!o.o&&o.i&&((n=t).x<(e=o).x+e.w&&n.x+n.w>e.x&&n.y<e.y+e.t&&n.y+n.t>e.y)&&o.i(o)}));f.length&&(f[0].o||!(f[0].x+f[0].w-l>=0));)f.shift();for(;r<l+n+100;){const o=Math.random(),t=[];if(o<.3){r+=120;const o=r;let n=r+w(8e3,1600,Math.random());for(;r<n;){const n=w(e/8,e/2,(r-o)/1e3),c=w(44,n,Math.random()),i={x:r,y:c,w:20,t:20,c:"#F00",i:y};c>e/3&&Math.random()>.7&&(i.c="#0F0",i.i=F),t.push(i),Math.random()>.5&&_(t[t.length-1]),r+=w(60,80,Math.random())}r+=120}else if(o<.6)r+=180,t.push({x:r,y:e/2-200,w:80,t:400,c:"#F00",i:y}),r+=180;else if(o<.9){r+=120;let o=r+w(8e3,1600,Math.random());for(;r<o;){const o=Math.random();if(o<.2){r+=150;const o={x:r,y:44,w:80,t:200,c:"#F00",i:y};t.push(o),t.push(_(Object.assign({},o))),Math.random()>.8&&t.push({x:r+40-10,y:e/2-10,w:20,t:20,c:"#0F0",i:F}),r+=250}else if(o<.6){r+=150;let o,n,c={x:r,y:44,w:80,t:400,c:"#F00",i:y};Math.random()>.5&&(o={x:r,y:44,w:80,t:20,c:"#F00",i:y},_(o),n={x:r+40-10,y:444+(e-88-400-20)/2,w:20,t:20,c:"#0F0",i:F}),Math.random()>.5&&(_(c),o&&_(o),n&&_(n)),t.push(c),o&&t.push(o),n&&t.push(n),r+=250}}}else r+=100;t.sort(((o,t)=>o.x-t.x)),Math.random()>.5&&t.forEach((o=>_(o))),f.push(...t)}}let b=new Date;function g(){a*=-1,h/=3}!function o(){let t=new Date,n=Math.min((t-b)/1e3,1/15);c+=n,n*=1;for(let o=0;o<4;++o)m(n/4);M(),requestAnimationFrame(o)}(),window.addEventListener("keydown",(o=>{console.log(o),"Space"==o.code&&g()})),window.addEventListener("touchstart",(o=>{console.log(o),g()}));
+</script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Graphics?</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            /* width: 100%; */
+        }
+        canvas {
+            border: 3px solid black;
+            margin: 20px;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="c">
+    </canvas>
+<script>
+'use strict';
+/** @type {HTMLCanvasElement} */
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+
+const width = 500;
+const height = 500;
+c.width = width;
+c.height = height;
+
+function render() {
+    ctx.clearRect(width, height);
+}
+</script>
+</body>
+</html>

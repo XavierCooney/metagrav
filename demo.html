@@ -43,6 +43,8 @@ let obstacle_generation_x = 600;
 
 let forward_speed = 110;
 
+let difficulty = 1; // [0, 1]
+
 const PLAYER_RADIUS = 20;
 const SIDE_BARS_WIDTH = 22;
 const BAR_INSCRIPTION_PERIOD = 30;
@@ -257,8 +259,9 @@ function update(dt) {
 
                     obstacle_generation_x += 250;
                 } else if(sub_decision < 0.6) {
-                    obstacle_generation_x += 150;
-                    const new_obstacle = {
+                    // Poking out column
+                    obstacle_generation_x += lerp(300, 200, difficulty);
+                    let poking_out_column = {
                         x: obstacle_generation_x,
                         y: SIDE_BARS_WIDTH * 2,
                         w: 80,
@@ -266,24 +269,41 @@ function update(dt) {
                         c: '#F00',
                         do_collision: do_death
                     };
+                    let grazer, coin;
+
                     if(Math.random() > 0.5) {
-                        invert_obstacle_y(new_obstacle);
+                        // Coin plus a grazer
+                        grazer = {
+                            x: obstacle_generation_x,
+                            y: SIDE_BARS_WIDTH * 2,
+                            w: 80,
+                            h: 20,
+                            c: '#F00',
+                            do_collision: do_death
+                        };
+                        invert_obstacle_y(grazer);
+                        coin = {
+                            x: obstacle_generation_x + 40 - 10,
+                            y: SIDE_BARS_WIDTH * 2 + 400 + (height - SIDE_BARS_WIDTH * 4 - 400 - 20) / 2,
+                            w: 20,
+                            h: 20,
+                            c: '#0F0',
+                            do_collision: got_coin
+                        };
+                        // invert_obstacle_y(coin);
                     }
-                    new_obstacles.push(new_obstacle);
-                    // new_obstacles.push(invert_obstacle_y(Object.assign({}, new_obstacle)));
 
-                    // if(Math.random() > 0.8) {
-                    //     new_obstacles.push({
-                    //         x: obstacle_generation_x + 40 - 10,
-                    //         y: height / 2 - 10,
-                    //         w: 20,
-                    //         h: 20,
-                    //         c: '#0F0',
-                    //         do_collision: got_coin
-                    //     });
-                    // }
+                    if(Math.random() > 0.5) {
+                        invert_obstacle_y(poking_out_column);
+                        if(grazer) invert_obstacle_y(grazer);
+                        if(coin) invert_obstacle_y(coin);
+                    }
 
-                    obstacle_generation_x += 250;
+                    new_obstacles.push(poking_out_column);
+                    if(grazer) new_obstacles.push(grazer);
+                    if(coin) new_obstacles.push(coin);
+
+                    obstacle_generation_x += lerp(lerp(400, 500, Math.random()), 275, difficulty);;
                 }
             }
         } else {
