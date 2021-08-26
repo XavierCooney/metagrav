@@ -86,14 +86,26 @@ function render3() {
     }
 
     let x_offset = 0;
-    function line(x, y, dx, dy) {
+    const centre_x = 250;
+    const centre_y = 250;
+
+    function line(x, y, dx, dy, join_to_0) {
         let length = Math.sqrt(Math.pow(dx, 2) + Math.pow(dy, 2));
 
-        for(let t = 0; t < 1; t += 1e-4) {
-            debugger;
+        for(let t = 0; t < 1; t += 1e-3) {
+            const x_minus_c = lerp(x, x + dx, t) - centre_x;
+            const y_minus_c = lerp(y, y + dy, t) - centre_y;
+
+            const length_from_c = Math.sqrt(x_minus_c * x_minus_c + y_minus_c * y_minus_c);
+
+            let perturbation = f(t * length + x_offset) * 0.25;
+            if(join_to_0) {
+                perturbation = lerp(perturbation, f((t - 1) * length) * 0.25, t);
+            }
+
             ctx.fillRect(
-                lerp(x, x + dx, t) + f(t * length + x_offset) / 4,
-                lerp(y, y + dy, t) + f(t * length + x_offset) / 4,
+                lerp(x, x + dx, t) + perturbation * x_minus_c / length_from_c,
+                lerp(y, y + dy, t) + perturbation * y_minus_c / length_from_c,
                 3, 3
             );
         }
@@ -102,12 +114,78 @@ function render3() {
 
     line(100, 100, 300, 0); // -> (400, 100)
     line(400, 100, 0, 300); // -> (400, 100)
+    line(400, 400, -300, 0); // -> (400, 100)
+    line(100, 400, 0, -300, true); // -> (400, 100)
 
     requestAnimationFrame(render3);
 }
 
+function render4() {
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, width, height);
 
-render2();
+    function f(x) {
+        let xx = x / 3;
+        return 0.25 * (
+            10 * Math.sin(xx)
+            + 6 * Math.sin(xx / 2.1)
+            + 14 * Math.sin(xx / 3 + (new Date() / 800))
+            + 28 * Math.sin(xx / 4 - (new Date() / 2100))
+            + 3 * Math.sin(xx / 5 - (new Date() / 600))
+        );
+    }
+
+    let x_offset = 0;
+    const centre_x = 250;
+    const centre_y = 250;
+
+    function line(from_x, from_y, to_x, to_y, final_line) {
+        let length = Math.sqrt(Math.pow(from_x - to_x, 2) + Math.pow(from_y - to_y, 2));
+
+        for(let t = 0; t <= 1; t += 1 / length * 3) {
+            const x_minus_c = lerp(from_x, to_x, t) - centre_x;
+            const y_minus_c = lerp(from_y, to_y, t) - centre_y;
+
+            const length_from_c = Math.sqrt(x_minus_c * x_minus_c + y_minus_c * y_minus_c);
+
+            let perturbation = f(t * length + x_offset);
+
+            if(final_line) {
+                perturbation = lerp(perturbation, f((t - 1) * length), t);
+            }
+
+            const x_pos = lerp(from_x, to_x, t) + perturbation * x_minus_c / length_from_c;
+            const y_pos = lerp(from_y, to_y, t) + perturbation * y_minus_c / length_from_c;
+
+            if(t == 0 && x_offset == 0) {
+                ctx.moveTo(x_pos, y_pos);
+            } else {
+                ctx.lineTo(x_pos, y_pos);
+            }
+        }
+        x_offset += length;
+    }
+
+    // for(let i = 0; i < 5; i++) {
+        x_offset = 0;
+        ctx.beginPath();
+        line(100, 100, 400, 100);
+        line(400, 100, 400, 400);
+        line(400, 400, 100, 400);
+        line(100, 400, 100, 100, true);
+        ctx.closePath();
+        ctx.fillStyle = '#fc6f03';
+        ctx.fill();
+        ctx.lineWidth = 5;
+        ctx.strokeStyle = '#f7a260';
+        ctx.stroke();
+    // }
+
+    requestAnimationFrame(render4);
+}
+
+
+render4();
 </script>
 </body>
 </html>
