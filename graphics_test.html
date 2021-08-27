@@ -184,8 +184,176 @@ function render4() {
     requestAnimationFrame(render4);
 }
 
+{
+    const particles5 = [];
+    let last_particle5 = 0;
 
-render4();
+    function render5() {
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, width, height);
+
+        const time_now = new Date();
+
+        for(let i = 0; i < 2e3; ++i) {
+            const offset = i ** 4.7;
+            const x = offset * 1.9 % 500;
+            const y = offset % 501;
+            ctx.beginPath();
+            const r = offset % 6 * Math.sin(i + (new Date()) / 1000) ** 2
+            ctx.arc(x, y, r / 4, 0, Math.PI * 2);
+            const c = Math.floor(42 * r);
+            ctx.fillStyle = `rgba(${c}, ${c}, ${c}, ${c})`;
+            ctx.fill();
+        }
+
+        particles5.forEach(p => {
+            const r = lerp(1, 5, (time_now - p.t) / 1100);
+            ctx.fillStyle = `rgb(210, ${lerp(50, 120, (time_now - p.t) / 1500)}, 0)`;
+            ctx.beginPath();
+            ctx.arc(p.x - Math.pow((time_now - p.t) / 50, 1.3), p.y, r, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        ctx.save();
+        ctx.translate(250, 250);
+        ctx.fillStyle = '#EEE';
+        ctx.beginPath();
+        ctx.moveTo(0, -10);
+        ctx.lineTo(10, 0);
+        ctx.lineTo(0, 10);
+        ctx.lineTo(-15, 10);
+        ctx.lineTo(-10, 5);
+        ctx.lineTo(-10, -5);
+        ctx.lineTo(-15, -10);
+        ctx.lineTo(0, -10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        if(new Date() - last_particle5 > 400) {
+            particles5.push({t: time_now, x: -15 + 250, y: 10 + 250});
+            particles5.push({t: time_now, x: -15 + 250, y: -10 + 250});
+            last_particle5 = time_now;
+        }
+
+        requestAnimationFrame(render5);
+    }
+    window.render5 = render5;
+}
+
+{
+    const particles6 = [];
+    let last_particle6 = 0;
+
+    function render6() {
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, width, height);
+
+        const time_now = new Date();
+
+        for(let i = 0; i < 2e3; ++i) {
+            const offset = i ** 4.7;
+            const x = offset * 1.9 % 500;
+            const y = offset % 501;
+            ctx.beginPath();
+            const r = offset % 6 * Math.sin(i + (new Date()) / 1000) ** 2
+            ctx.arc(x, y, r / 4, 0, Math.PI * 2);
+            const c = Math.floor(42 * r);
+            ctx.fillStyle = `rgba(${c}, ${c}, ${c}, ${c})`;
+            ctx.fill();
+        }
+
+        particles6.forEach(p => {
+            const r = lerp(1, 5, (time_now - p.t) / 1100);
+            ctx.fillStyle = `rgb(210, ${lerp(50, 120, (time_now - p.t) / 1500)}, 0)`;
+            ctx.beginPath();
+            ctx.arc(p.x - Math.pow((time_now - p.t) / 50, 1.3), p.y, r, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        ctx.save();
+        ctx.translate(250, 250);
+        ctx.fillStyle = '#EEE';
+        ctx.beginPath();
+        ctx.moveTo(0, -10);
+        ctx.lineTo(10, 0);
+        ctx.lineTo(0, 10);
+        ctx.lineTo(-15, 10);
+        ctx.lineTo(-10, 5);
+        ctx.lineTo(-10, -5);
+        ctx.lineTo(-15, -10);
+        ctx.lineTo(0, -10);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        if(new Date() - last_particle6 > 400) {
+            particles6.push({t: time_now, x: -15 + 250, y: 10 + 250});
+            particles6.push({t: time_now, x: -15 + 250, y: -10 + 250});
+            last_particle6 = time_now;
+        }
+
+        function f(x) {
+            let xx = x / 3;
+            return 0.15 * (
+                10 * Math.sin(xx)
+                + 6 * Math.sin(xx / 2.1)
+                + 14 * Math.sin(xx / 3 + (new Date() / 800))
+                + 28 * Math.sin(xx / 4 - (new Date() / 2100))
+                + 3 * Math.sin(xx / 5 - (new Date() / 600))
+            );
+        }
+
+        let x_offset = 0;
+        const centre_x = 350;
+        const centre_y = 350;
+
+        function line(from_x, from_y, to_x, to_y, final_line) {
+            let length = Math.sqrt(Math.pow(from_x - to_x, 2) + Math.pow(from_y - to_y, 2));
+
+            for(let t = 0; t <= 1; t += 1 / length * 3) {
+                const x_minus_c = lerp(from_x, to_x, t) - centre_x;
+                const y_minus_c = lerp(from_y, to_y, t) - centre_y;
+
+                const length_from_c = Math.sqrt(x_minus_c * x_minus_c + y_minus_c * y_minus_c);
+
+                let perturbation = f(t * length + x_offset);
+
+                if(final_line) {
+                    perturbation = lerp(perturbation, f((t - 1) * length), t);
+                }
+
+                const x_pos = lerp(from_x, to_x, t) + perturbation * x_minus_c / length_from_c;
+                const y_pos = lerp(from_y, to_y, t) + perturbation * y_minus_c / length_from_c;
+
+                if(t == 0 && x_offset == 0) {
+                    ctx.moveTo(x_pos, y_pos);
+                } else {
+                    ctx.lineTo(x_pos, y_pos);
+                }
+            }
+            x_offset += length;
+        }
+        x_offset = 0;
+        ctx.beginPath();
+        line(300, 300, 300, 400);
+        line(300, 400, 400, 400);
+        line(400, 400, 400, 300);
+        line(400, 300, 300, 300, true);
+        ctx.closePath();
+        ctx.fillStyle = '#fc6f03';
+        ctx.fill();
+        ctx.lineWidth = 5;
+        ctx.strokeStyle = '#f7a260';
+        ctx.stroke();
+
+        requestAnimationFrame(render6);
+    }
+    window.render6 = render6;
+}
+
+
+render6();
 </script>
 </body>
 </html>
