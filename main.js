@@ -73,18 +73,28 @@ let exhaust_particles = [];
 let last_exhaust_emission = 0;
 const time_between_exhausts = 0.2;
 
-const dialogue_box_width = 600;
+const dialogue_box_width = 700;
 const dialogue_box_margin = 50;
 const dialogue_rate = 0.08;
+
+let skip_dialogue_pressed = false;
 
 /* ======= Rendering ======= */
 function make_colour_string(r, g, b, a) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
-let dialogue_lines_done = [''];
+let dialogue_lines_done = [];
 let characters_to_add_to_line = [];
 let dialogue_words_left = [];
+let start_of_empty_dialogue = Infinity;
+const stages_with_dialogue_screen = [1];
+let can_skip_dialogue = true;
+let need_space_to_proceed = false;
+
+function dialogue_done_running() {
+    return dialogue_lines_done.length && !characters_to_add_to_line.length && !dialogue_words_left.length;
+}
 
 function render() {
     ctx.save();
@@ -110,7 +120,7 @@ function render() {
         const radius = 1000;
         ctx.beginPath();
         const t_val = 1 - i / 70;
-        const parallax_movement = -1 * cam_x * Math.pow(1 - t_val, 2);
+        const parallax_movement = -1 * cam_x * Math.pow(1.4 * (1 - t_val), 2);
         const x = ((i + 7) ** 5.1 + parallax_movement) % (2 * width) - width / 2;
         const y_offset = lerp(80, 160, (i + 6) ** 5.5 % 1) + t_val * 60;
         ctx.arc(x, height + radius - y_offset, radius, 0, Math.PI * 2);
@@ -167,12 +177,12 @@ function render() {
 
         ctx.fillStyle = make_colour_string(255, 255, 255, lerp(0, 1, stage_elapsed / 1 - 2));
         ctx.font = ctx.font.replace('52', '30');
-        ctx.fillText("Press Space to Start", width / 2, 400);
+        ctx.fillText("Press [SPACE] to Start", width / 2, 400);
         ctx.fillText("(I'm going to put some interesting stuff here)", width / 2, 600);
     }
 
     // Render dialogue
-    if([1].includes(stage)) {
+    if(stages_with_dialogue_screen.includes(stage)) {
         let dialogue_window_x = lerp(width, width - dialogue_box_width - dialogue_box_margin, stage_elapsed);
         ctx.fillStyle = '#DDD';
         ctx.fillRect(dialogue_window_x, dialogue_box_margin, dialogue_box_width, height - 2 * dialogue_box_margin);
@@ -189,7 +199,7 @@ function render() {
             ctx.fillStyle = '#000';
             ctx.fillText(line, dialogue_window_x + 20, dialogue_box_margin + 20 + dialogue_offset);
 
-            const line_measuremnt = ctx.measureText(line);
+            const line_measuremnt = ctx.measureText(line + "|");
             dialogue_offset += line_measuremnt.actualBoundingBoxDescent + line_measuremnt.actualBoundingBoxAscent + 9;
 
             if(line_num == dialogue_lines_done.length - 1 && characters_to_add_to_line.length == 0 && dialogue_words_left.length > 0) {
@@ -198,13 +208,24 @@ function render() {
                     dialogue_words_left.shift();
                     dialogue_lines_done.push('');
                 } else if(new_line_width < dialogue_box_width - 40) {
-                    characters_to_add_to_line = (dialogue_words_left[0] + ' ').split('');
+                    if(dialogue_words_left[0] != '#') {
+                        characters_to_add_to_line = (dialogue_words_left[0] + ' ').split('');
+                    } else {
+                        characters_to_add_to_line = ['#'];
+                    }
                     dialogue_words_left.shift();
                 } else {
                     dialogue_lines_done.push('');
                 }
             }
         });
+        if(dialogue_done_running() && need_space_to_proceed) {
+            ctx.font = "20px 'Press Start 2P', monospace";
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = '#000';
+            ctx.fillText('[SPACE] to continue', dialogue_window_x + dialogue_box_width / 2, height - dialogue_box_margin - 20);
+        }
     }
 
     ctx.restore();
@@ -214,10 +235,19 @@ function render() {
 let last_dialogue_character_added = 0;
 
 function add_dialogue(dialogue) {
+    if(dialogue_lines_done.length == 0) {
+        dialogue_lines_done = [''];
+    }
     dialogue_words_left.push(...dialogue.split(' '));
 }
+
 function dialogue_newline() {
     dialogue_words_left.push('\n');
+}
+
+function add_dialogue_nl(dialogue) {
+    add_dialogue(dialogue);
+    dialogue_newline();
 }
 
 function update(dt) {
@@ -246,24 +276,44 @@ function update(dt) {
     player_x += forward_velocity * dt;
     cam_x = Math.max(600, player_x) - 600;
 
-    last_dialogue_character_added = Math.max(last_dialogue_character_added, elapsed_time - 3 * dialogue_rate);
-    if(characters_to_add_to_line.length && elapsed_time - last_dialogue_character_added > dialogue_rate) {
-        last_dialogue_character_added += dialogue_rate;
-        dialogue_lines_done[dialogue_lines_done.length - 1] += characters_to_add_to_line[0];
-        characters_to_add_to_line.shift();
+    if(characters_to_add_to_line.length) {
+        if(characters_to_add_to_line[0] == '#') {
+            if(skip_dialogue_pressed || elapsed_time - last_dialogue_character_added > 0.5) {
+                characters_to_add_to_line.shift();
+                if(!skip_dialogue_pressed) last_dialogue_character_added += 0.5;
+            }
+        } else if(skip_dialogue_pressed || elapsed_time - last_dialogue_character_added > dialogue_rate) {
+            last_dialogue_character_added = Math.max(last_dialogue_character_added, elapsed_time - 3 * dialogue_rate);
+            if(!skip_dialogue_pressed) last_dialogue_character_added += dialogue_rate;
+            dialogue_lines_done[dialogue_lines_done.length - 1] += characters_to_add_to_line[0];
+            characters_to_add_to_line.shift();
+        }
+    }
+
+    if(characters_to_add_to_line.length == 0 && dialogue_words_left.length == 0 && !need_space_to_proceed) {
+        start_of_empty_dialogue = Math.min(start_of_empty_dialogue, elapsed_time);
+        skip_dialogue_pressed = false;
+    } else {
+        start_of_empty_dialogue = Infinity;
     }
 
     if(stage == 1) {
         if(substage == 0 && stage_elapsed > 1) {
-            add_dialogue('Hello! I am your onboard ship computer. Standby...');
-            dialogue_newline();
+            add_dialogue_nl('[HYPERSPACE ANOMALY DETECTED] \n');
+            add_dialogue_nl('# [STARTING SHIP AI] \n');
+            add_dialogue_nl('# # # Hello there, I am OSCaR, your Onboard Ship Computer and Resourcer. Please standby... \n');
+            // console.log(Array.from(dialogue_words_left));
             substage = 1;
-        } else if(substage == 1 && stage_elapsed > 6) {
+        } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 2) {
             player_x = -600;
-            add_dialogue('Alert! Exiting hyperspeed!');
-            dialogue_newline();
-            add_dialogue("[This is just some test dialogue I haven't done anything beyond this, feedback so far welcome]");
+            add_dialogue_nl('ALERT! Exiting hyperspeed!');
+            can_skip_dialogue = false;
+            need_space_to_proceed = true;
             substage = 2;
+        } else if(substage == 2 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            dialogue_lines_done = [];
+            add_dialogue_nl("Stay calm, you are in no danger because I haven't finished writing this dialogue sequence...");
+            substage = 3;
         }
     }
 }
@@ -299,7 +349,15 @@ function frame() {
 frame();
 
 function space_key_hit() {
-    if(stage == 0) {
+    if(stages_with_dialogue_screen.includes(stage)) {
+        if(dialogue_done_running()) {
+            if(need_space_to_proceed) {
+                need_space_to_proceed = false;
+            }
+        } else if(can_skip_dialogue) {
+            skip_dialogue_pressed = true;
+        }
+    } else if(stage == 0) {
         set_stage(1);
     }
 }
