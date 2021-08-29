@@ -287,13 +287,13 @@ function init_audio() {
 }
 
 function do_audio_beep() {
-    const dialogue_beep_duration = 0.08;
+    const dialogue_beep_duration = 0.04;
 
     dialogue_beep.frequency.cancelScheduledValues(audio_ctx.currentTime);
-    dialogue_beep.frequency.setValueAtTime(500, audio_ctx.currentTime);
-    dialogue_beep.frequency.linearRampToValueAtTime(50, audio_ctx.currentTime + dialogue_beep_duration);
+    dialogue_beep.frequency.setValueAtTime(700, audio_ctx.currentTime);
+    dialogue_beep.frequency.linearRampToValueAtTime(100, audio_ctx.currentTime + dialogue_beep_duration);
     dialogue_beep_gain.gain.cancelScheduledValues(audio_ctx.currentTime);
-    dialogue_beep_gain.gain.setValueAtTime(0.4, audio_ctx.currentTime);
+    dialogue_beep_gain.gain.setValueAtTime(0.12, audio_ctx.currentTime);
     dialogue_beep_gain.gain.linearRampToValueAtTime(0, audio_ctx.currentTime + dialogue_beep_duration);
 }
 
