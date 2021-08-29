@@ -271,6 +271,10 @@ let dialogue_beep;
 let dialogue_beep_gain;
 
 function init_audio() {
+    if(!window.AudioContext === undefined) {
+        alert("Audio not supported for this browser. Try another browser for best experience");
+    }
+
     audio_ctx = new AudioContext();
 
     dialogue_beep = audio_ctx.createOscillator();
