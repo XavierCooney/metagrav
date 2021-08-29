@@ -38,6 +38,8 @@ let grav_direction = 1;
 let player_y_velocity = 0;
 let forward_velocity = 350;
 
+let last_explosion_time = -Infinity;
+
 let obstacle_generation_x = 600;
 let difficulty = 0; // [0, 1]
 
@@ -146,9 +148,23 @@ function render() {
 
     if(stage != 0) {
         ctx.save();
-        ctx.fillStyle = '#FFF';
-        ctx.strokeStyle = '#F8F8F8';
-        ctx.translate(player_x - cam_x, player_y);
+        let explosion_t = (Math.sin(elapsed_time * Math.PI * 2 * 5) + 1) / 2 * lerp(1, 0, (elapsed_time - last_explosion_time) / 3);
+        ctx.fillStyle = make_colour_string(
+            lerp(255, 176, explosion_t),
+            lerp(255, 12, explosion_t),
+            lerp(255, 12, explosion_t),
+            1
+        );
+        ctx.strokeStyle = make_colour_string(
+            lerp(240, 176, explosion_t),
+            lerp(240, 12, explosion_t),
+            lerp(240, 12, explosion_t),
+            1
+        );
+        ctx.translate(
+            player_x - cam_x + lerp(40, 0, (elapsed_time - last_explosion_time) / 3) * Math.random(),
+            player_y + lerp(20, 0, (elapsed_time - last_explosion_time) / 3) * Math.random(),
+        );
         ctx.beginPath();
         ctx.moveTo(...player_points[0]);
         player_points.forEach((p, i) => {
@@ -220,7 +236,7 @@ function render() {
             }
         });
         if(dialogue_done_running() && need_space_to_proceed) {
-            ctx.font = "20px 'Press Start 2P', monospace";
+            ctx.font = "italic 20px 'Press Start 2P', monospace";
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.fillStyle = '#000';
@@ -231,8 +247,77 @@ function render() {
     ctx.restore();
 }
 
+/* ======= Audio ======= */
+/** @type {AudioContext} */
+let audio_ctx;
+let dialogue_beep;
+let dialogue_beep_gain;
+
+function init_audio() {
+    audio_ctx = new AudioContext();
+
+    dialogue_beep = audio_ctx.createOscillator();
+    dialogue_beep.type = 'triangle';
+    dialogue_beep_gain = audio_ctx.createGain();
+    dialogue_beep_gain.gain.value = 0;
+    dialogue_beep.connect(dialogue_beep_gain).connect(audio_ctx.destination);
+    dialogue_beep.start();
+}
+
+function do_audio_beep() {
+    const dialogue_beep_duration = 0.02;
+
+    dialogue_beep.frequency.setValueAtTime(500, audio_ctx.currentTime);
+    dialogue_beep.frequency.linearRampToValueAtTime(60, audio_ctx.currentTime + dialogue_beep_duration);
+    dialogue_beep_gain.gain.value = 0.2;
+    dialogue_beep_gain.gain.setValueAtTime(0, audio_ctx.currentTime + dialogue_beep_duration);
+
+}
+
+function audio_sound_explosion() {
+    const duration = 1.5;
+    const buffer_size = audio_ctx.sampleRate * duration;
+    const buffer = audio_ctx.createBuffer(1, buffer_size, audio_ctx.sampleRate);
+    let data = buffer.getChannelData(0);
+
+    let phase = 0;
+    let last_sample = 0;
+
+    for (let i = 0; i < buffer_size; i++) {
+        const t = i / audio_ctx.sampleRate;
+        const frequency = 1200 * Math.pow(0.5, t);
+        phase += frequency / audio_ctx.sampleRate;
+        if(i % 1e4 == 0) console.log(frequency / audio_ctx.sampleRate);
+
+        if(phase > 1) {
+            phase -= Math.floor(phase);
+            last_sample = Math.random() * 2 - 1;
+        }
+        data[i] = last_sample;
+    }
+
+    let noise = audio_ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    let bandpass = audio_ctx.createBiquadFilter();
+    bandpass.type = 'lowpass';
+    bandpass.frequency.value = 440;
+
+    let gain_node = audio_ctx.createGain();
+    gain_node.gain.setValueAtTime(10, audio_ctx.currentTime);
+    gain_node.gain.linearRampToValueAtTime(0, audio_ctx.currentTime + duration);
+
+    noise.connect(bandpass).connect(gain_node).connect(audio_ctx.destination);
+    noise.start(audio_ctx.currentTime);
+}
+
 /* ======= Updating ======= */
 let last_dialogue_character_added = 0;
+
+function cause_explosion() {
+    last_explosion_time = elapsed_time;
+    audio_sound_explosion();
+}
 
 function add_dialogue(dialogue) {
     if(dialogue_lines_done.length == 0) {
@@ -284,6 +369,7 @@ function update(dt) {
             }
         } else if(skip_dialogue_pressed || elapsed_time - last_dialogue_character_added > dialogue_rate) {
             last_dialogue_character_added = Math.max(last_dialogue_character_added, elapsed_time - 3 * dialogue_rate);
+            do_audio_beep();
             if(!skip_dialogue_pressed) last_dialogue_character_added += dialogue_rate;
             dialogue_lines_done[dialogue_lines_done.length - 1] += characters_to_add_to_line[0];
             characters_to_add_to_line.shift();
@@ -301,7 +387,7 @@ function update(dt) {
         if(substage == 0 && stage_elapsed > 1) {
             add_dialogue_nl('[HYPERSPACE ANOMALY DETECTED] \n');
             add_dialogue_nl('# [STARTING SHIP AI] \n');
-            add_dialogue_nl('# # # Hello there, I am OSCaR, your Onboard Ship Computer and Resourcer. Please standby... \n');
+            add_dialogue_nl('# # # Hello there, # I am OSCaR, your Onboard Ship Computer and Resourcer. Please standby... \n');
             // console.log(Array.from(dialogue_words_left));
             substage = 1;
         } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 2) {
@@ -310,10 +396,19 @@ function update(dt) {
             can_skip_dialogue = false;
             need_space_to_proceed = true;
             substage = 2;
-        } else if(substage == 2 && elapsed_time - start_of_empty_dialogue > 0.1) {
+        } else if(substage == 2 && elapsed_time - start_of_empty_dialogue > 0.3) {
             dialogue_lines_done = [];
-            add_dialogue_nl("Stay calm, you are in no danger because I haven't finished writing this dialogue sequence...");
+            can_skip_dialogue = true;
+            need_space_to_proceed = true;
+            add_dialogue_nl("I have detected some good news and some bad news. # The bad news is that the ship has exited hyperspace onto a planet 200 parsecs away from the target desination. # The good news is that all the ship's systems are intact...");
             substage = 3;
+        } else if(substage == 3 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            cause_explosion();
+            dialogue_lines_done = [];
+            can_skip_dialogue = true;
+            need_space_to_proceed = true;
+            add_dialogue_nl("# # # # Update: I was wrong. It's all bad news actually. Almost every control is scrambled. In fact, the only thing that's working seems to be the internal gravitational actuator. I've wired up the [SPACE] button on your control matrix to it. Don't worry, the coarse navigation system should keep you from flying into the planet or up to outer space, but still... be careful.");
+            substage = 4;
         }
     }
 }
@@ -323,6 +418,7 @@ function set_stage(new_stage) {
     if(stage == 0) {
         player_x = -1e20;
         exhaust_particles = [];
+        init_audio();
     }
 
     stage = new_stage;
