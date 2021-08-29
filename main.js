@@ -2,7 +2,7 @@
 
 /* ======= Canvas Setup ======= */
 /** @type {HTMLCanvasElement} */
-const canv = document.getElementById('c');
+const canv = /** @type {HTMLCanvasElement} */ (document.getElementById('c'));
 const ctx = canv.getContext('2d');
 
 const height = 1000;
@@ -23,6 +23,14 @@ recalculate_sizing();
 /* ======= Utilities ======= */
 function lerp(start, end, x) {
     return start + Math.max(0, Math.min(1, x)) * (end - start)
+}
+
+function rlerp(start, end) {
+    return lerp(start, end, Math.random());
+}
+
+function rand_element_form_arr(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
 }
 
 const get_time = () => new Date() / 1000;
@@ -86,6 +94,10 @@ function make_colour_string(r, g, b, a) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
 
+function get_explosion_offset() {
+    return lerp(rlerp(-20, 20), 0, (elapsed_time - last_explosion_time) / 3);
+}
+
 let dialogue_lines_done = [];
 let characters_to_add_to_line = [];
 let dialogue_words_left = [];
@@ -138,6 +150,7 @@ function render() {
 
     // Render obstacles
     // Render ship
+
     exhaust_particles.forEach(particle => {
         ctx.beginPath();
         const time_since_particle = elapsed_time - particle.t;
@@ -146,8 +159,10 @@ function render() {
         ctx.fill();
     });
 
+
     if(stage != 0) {
         ctx.save();
+
         let explosion_t = (Math.sin(elapsed_time * Math.PI * 2 * 5) + 1) / 2 * lerp(1, 0, (elapsed_time - last_explosion_time) / 3);
         ctx.fillStyle = make_colour_string(
             lerp(255, 176, explosion_t),
@@ -161,10 +176,12 @@ function render() {
             lerp(240, 12, explosion_t),
             1
         );
+
         ctx.translate(
-            player_x - cam_x + lerp(40, 0, (elapsed_time - last_explosion_time) / 3) * Math.random(),
-            player_y + lerp(20, 0, (elapsed_time - last_explosion_time) / 3) * Math.random(),
+            player_x - cam_x + get_explosion_offset(),
+            player_y + get_explosion_offset()
         );
+
         ctx.beginPath();
         ctx.moveTo(...player_points[0]);
         player_points.forEach((p, i) => {
@@ -262,16 +279,18 @@ function init_audio() {
     dialogue_beep_gain.gain.value = 0;
     dialogue_beep.connect(dialogue_beep_gain).connect(audio_ctx.destination);
     dialogue_beep.start();
+    more_music();
 }
 
 function do_audio_beep() {
-    const dialogue_beep_duration = 0.02;
+    const dialogue_beep_duration = 0.08;
 
+    dialogue_beep.frequency.cancelScheduledValues(audio_ctx.currentTime);
     dialogue_beep.frequency.setValueAtTime(500, audio_ctx.currentTime);
-    dialogue_beep.frequency.linearRampToValueAtTime(60, audio_ctx.currentTime + dialogue_beep_duration);
-    dialogue_beep_gain.gain.value = 0.2;
-    dialogue_beep_gain.gain.setValueAtTime(0, audio_ctx.currentTime + dialogue_beep_duration);
-
+    dialogue_beep.frequency.linearRampToValueAtTime(50, audio_ctx.currentTime + dialogue_beep_duration);
+    dialogue_beep_gain.gain.cancelScheduledValues(audio_ctx.currentTime);
+    dialogue_beep_gain.gain.setValueAtTime(0.4, audio_ctx.currentTime);
+    dialogue_beep_gain.gain.linearRampToValueAtTime(0, audio_ctx.currentTime + dialogue_beep_duration);
 }
 
 function audio_sound_explosion() {
@@ -291,7 +310,7 @@ function audio_sound_explosion() {
 
         if(phase > 1) {
             phase -= Math.floor(phase);
-            last_sample = Math.random() * 2 - 1;
+            last_sample = rlerp(-1, 1);
         }
         data[i] = last_sample;
     }
@@ -304,11 +323,42 @@ function audio_sound_explosion() {
     bandpass.frequency.value = 440;
 
     let gain_node = audio_ctx.createGain();
-    gain_node.gain.setValueAtTime(10, audio_ctx.currentTime);
+    gain_node.gain.setValueAtTime(4, audio_ctx.currentTime);
     gain_node.gain.linearRampToValueAtTime(0, audio_ctx.currentTime + duration);
 
     noise.connect(bandpass).connect(gain_node).connect(audio_ctx.destination);
     noise.start(audio_ctx.currentTime);
+}
+
+const base_note = 200;
+const music_bpm = 70;
+const channel_time_till = [0, 0];
+
+function do_music_for_channel(channel) {
+    while(channel_time_till[channel] - audio_ctx.currentTime < 10) {
+        // This may be major pentatonic idk please correct me iff wrong
+        const notes_to_choose_from = [1, 1.5, 0.75, 1.125, 2 / 3];
+        const random_ratio = rand_element_form_arr(notes_to_choose_from);
+        const node = audio_ctx.createOscillator();
+        node.type = channel ? 'sine' : 'sawtooth';
+        node.frequency.value = random_ratio * base_note;
+        node.start(channel_time_till[channel]);
+        const duration = 60 * rand_element_form_arr([1, 1, 1, 1, 0.5, 2]) / music_bpm;
+        node.stop(channel_time_till[channel] + duration + 0.03);
+        const gain_node = audio_ctx.createGain();
+        gain_node.gain.setValueAtTime(channel ? 0.7 : 0.1, channel_time_till[channel]);
+        gain_node.gain.linearRampToValueAtTime(0.03, channel_time_till[channel] + duration);
+        node.connect(gain_node).connect(audio_ctx.destination);
+        channel_time_till[channel] += duration;
+    }
+}
+
+function more_music() {
+    // Complete prototype at the moment, will change
+    do_music_for_channel(0);
+    do_music_for_channel(1);
+
+    setTimeout(() => more_music(), 100);
 }
 
 /* ======= Updating ======= */
@@ -344,8 +394,8 @@ function update(dt) {
     if(elapsed_time - last_exhaust_emission > time_between_exhausts) {
         [-35, 35].forEach(dy => {
             exhaust_particles.push({
-                x: player_x - 80,
-                y: player_y + dy,
+                x: player_x - 80 + get_explosion_offset(),
+                y: player_y + dy + get_explosion_offset(),
                 dx: -5,
                 dy: player_y_velocity / 3,
                 t: elapsed_time
@@ -407,7 +457,7 @@ function update(dt) {
             dialogue_lines_done = [];
             can_skip_dialogue = true;
             need_space_to_proceed = true;
-            add_dialogue_nl("# # # # Update: I was wrong. It's all bad news actually. Almost every control is scrambled. In fact, the only thing that's working seems to be the internal gravitational actuator. I've wired up the [SPACE] button on your control matrix to it. Don't worry, the coarse navigation system should keep you from flying into the planet or up to outer space, but still... be careful.");
+            add_dialogue_nl("# # # # Update: I was wrong. It's all bad news actually. # Almost every control is scrambled. In fact, the only thing that's working seems to be the internal gravitational actuator. # I've wired up the [SPACE] button on your control matrix to it. Don't worry, the coarse navigation system should keep you from flying into the planet or up to outer space, but still... # be careful.");
             substage = 4;
         }
     }
