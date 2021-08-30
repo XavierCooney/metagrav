@@ -44,12 +44,17 @@ let cam_x = 0;
 let player_y = height / 2;
 let grav_direction = 1;
 let player_y_velocity = 0;
-let forward_velocity = 350;
+let forward_velocity = 250;
 
 let last_explosion_time = -Infinity;
 
 let obstacle_generation_x = 600;
 let difficulty = 0; // [0, 1]
+
+let player_health = 1; // [0, 1]
+let displayed_player_health = 1;
+let coins_gotten = 0;
+
 
 const TOP_BAR = 22;
 const SIDE_BARS_WIDTH = 22;
@@ -106,6 +111,8 @@ const stages_with_dialogue_screen = [1];
 let can_skip_dialogue = true;
 let need_space_to_proceed = false;
 
+const HUD_WIDTH = 150;
+
 function dialogue_done_running() {
     return dialogue_lines_done.length && !characters_to_add_to_line.length && !dialogue_words_left.length;
 }
@@ -116,6 +123,9 @@ function render() {
     // Render stars
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, width, height);
+
+    const hud_x = [0, 1].includes(stage) ? 0 : lerp(0, HUD_WIDTH, (stage_elapsed - 0.2) * 4);
+    ctx.translate(hud_x, 0);
 
     for(let i = 0; i < 2e3; ++i) {
         const offset = i ** 4.7;
@@ -150,7 +160,6 @@ function render() {
 
     // Render obstacles
     // Render ship
-
     exhaust_particles.forEach(particle => {
         ctx.beginPath();
         const time_since_particle = elapsed_time - particle.t;
@@ -214,6 +223,26 @@ function render() {
         ctx.fillText("(I'm going to put some interesting stuff here)", width / 2, 600);
     }
 
+    // Render HUD
+    if(![0, 1].includes(stage) && hud_x > 0) {
+        ctx.fillStyle = '#111';
+        ctx.fillRect(-hud_x, 0, hud_x, height);
+        ctx.strokeStyle = '#EEE';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, height);
+        ctx.lineWidth = 10;
+        ctx.stroke();
+
+        ctx.fillStyle = '#7d1111';
+        ctx.fillRect(-HUD_WIDTH * 2 / 3, 40, HUD_WIDTH / 3, 400);
+        const actual_height = 400 * displayed_player_health;
+        ctx.fillStyle = '#ff1919';
+        ctx.fillRect(-HUD_WIDTH * 2 / 3, 40 + 400 - actual_height, HUD_WIDTH / 3, actual_height);
+    }
+
+    ctx.translate(-hud_x, 0);
+
     // Render dialogue
     if(stages_with_dialogue_screen.includes(stage)) {
         let dialogue_window_x = lerp(width, width - dialogue_box_width - dialogue_box_margin, stage_elapsed);
@@ -267,6 +296,7 @@ function render() {
 /* ======= Audio ======= */
 /** @type {AudioContext} */
 let audio_ctx;
+let master_gain_node;
 let dialogue_beep;
 let dialogue_beep_gain;
 
@@ -276,14 +306,22 @@ function init_audio() {
     }
 
     audio_ctx = new AudioContext();
+    master_gain_node = audio_ctx.createGain();
+    master_gain_node.gain.value = window.localStorage['xav-space-js13k-mute'] ? 0 : 0.8;
+    master_gain_node.connect(audio_ctx.destination);
 
     dialogue_beep = audio_ctx.createOscillator();
     dialogue_beep.type = 'triangle';
     dialogue_beep_gain = audio_ctx.createGain();
     dialogue_beep_gain.gain.value = 0;
-    dialogue_beep.connect(dialogue_beep_gain).connect(audio_ctx.destination);
+    dialogue_beep.connect(dialogue_beep_gain).connect(master_gain_node);
     dialogue_beep.start();
     more_music();
+}
+
+function set_muted(muted) {
+    window.localStorage['xav-space-js13k-mute'] = muted ? "y" : "";
+    if(master_gain_node) master_gain_node.gain.value = muted ? 0 : 0.8;
 }
 
 function do_audio_beep() {
@@ -310,7 +348,7 @@ function audio_sound_explosion() {
         const t = i / audio_ctx.sampleRate;
         const frequency = 1200 * Math.pow(0.5, t);
         phase += frequency / audio_ctx.sampleRate;
-        if(i % 1e4 == 0) console.log(frequency / audio_ctx.sampleRate);
+        // if(i % 1e4 == 0) console.log(frequency / audio_ctx.sampleRate);
 
         if(phase > 1) {
             phase -= Math.floor(phase);
@@ -330,7 +368,7 @@ function audio_sound_explosion() {
     gain_node.gain.setValueAtTime(4, audio_ctx.currentTime);
     gain_node.gain.linearRampToValueAtTime(0, audio_ctx.currentTime + duration);
 
-    noise.connect(bandpass).connect(gain_node).connect(audio_ctx.destination);
+    noise.connect(bandpass).connect(gain_node).connect(master_gain_node);
     noise.start(audio_ctx.currentTime);
 }
 
@@ -352,7 +390,7 @@ function do_music_for_channel(channel) {
         const gain_node = audio_ctx.createGain();
         gain_node.gain.setValueAtTime(channel ? 0.7 : 0.1, channel_time_till[channel]);
         gain_node.gain.linearRampToValueAtTime(0.03, channel_time_till[channel] + duration);
-        node.connect(gain_node).connect(audio_ctx.destination);
+        node.connect(gain_node).connect(master_gain_node);
         channel_time_till[channel] += duration;
     }
 }
@@ -389,6 +427,21 @@ function add_dialogue_nl(dialogue) {
     dialogue_newline();
 }
 
+function reset_y_pos() {
+    player_y = height / 2;
+    player_y_velocity = 0;
+    grav_direction = 0;
+}
+
+function deal_damage(damage, reason) {
+    if(elapsed_time - last_explosion_time < 2.8) {
+        return;
+    }
+    player_health -= damage;
+    player_health = Math.max(0, player_health);
+    cause_explosion();
+}
+
 function update(dt) {
     elapsed_time += dt;
     stage_elapsed += dt;
@@ -412,8 +465,38 @@ function update(dt) {
         particle.x += particle.dx * dt;
     });
 
+    if(exhaust_particles.length && exhaust_particles[0].x + 200 < cam_x) {
+        exhaust_particles.shift();
+    }
+
     player_x += forward_velocity * dt;
     cam_x = Math.max(600, player_x) - 600;
+
+    player_y_velocity += grav_direction * dt * 375;
+    player_y += player_y_velocity * dt;
+
+    if(player_y < 60) {
+        player_y = 60;
+        player_y_velocity = 0;
+    } else if(player_y < 120) {
+        // player_y_velocity += dt * 20000 / Math.pow(player_y - 59, 2);
+        if(player_y_velocity < 0) {
+            player_y_velocity += -15 * dt * player_y_velocity;
+        }
+    }
+
+    if(player_y > 800) {
+        player_y -= 50;
+        player_y_velocity = 0;
+        deal_damage(1 / 5);
+        grav_direction = -1;
+    }
+
+    if(displayed_player_health > player_health) {
+        displayed_player_health -= Math.min(dt * 0.5, displayed_player_health - player_health);
+    } else if(displayed_player_health < player_health) {
+        displayed_player_health += Math.min(dt / 2, player_health - displayed_player_health);
+    }
 
     if(characters_to_add_to_line.length) {
         if(characters_to_add_to_line[0] == '#') {
@@ -438,14 +521,16 @@ function update(dt) {
     }
 
     if(stage == 1) {
+        reset_y_pos();
+        player_y = height / 4;
         if(substage == 0 && stage_elapsed > 1) {
             add_dialogue_nl('[HYPERSPACE ANOMALY DETECTED] \n');
             add_dialogue_nl('# [STARTING SHIP AI] \n');
-            add_dialogue_nl('# # # Hello there, # I am OSCaR, your Onboard Ship Computer and Resourcer. Please standby... \n');
+            add_dialogue_nl('# # # Hello there, # I am OSCaR, your Onboard Ship Computer and Rectifier. Please standby... \n');
             // console.log(Array.from(dialogue_words_left));
             substage = 1;
         } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 2) {
-            player_x = -600;
+            player_x = -300;
             add_dialogue_nl('ALERT! Exiting hyperspeed!');
             can_skip_dialogue = false;
             need_space_to_proceed = true;
@@ -461,10 +546,19 @@ function update(dt) {
             dialogue_lines_done = [];
             can_skip_dialogue = true;
             need_space_to_proceed = true;
-            add_dialogue_nl("# # # # Update: I was wrong. It's all bad news actually. # Almost every control is scrambled. In fact, the only thing that's working seems to be the internal gravitational actuator. # I've wired up the [SPACE] button on your control matrix to it. Don't worry, the coarse navigation system should keep you from flying into the planet or up to outer space, but still... # be careful.");
+            add_dialogue_nl("# # # # Update: I was wrong. It's all bad news actually. # Almost every control is scrambled. In fact, the only thing that's working seems to be the internal gravitational actuator. # I've wired up the [SPACE] button on your control matrix to it. The orbital navigation system should keep you from flying up to outer space, but uhhhh still... # be careful.");
             substage = 4;
+        } else if(substage == 4 && elapsed_time - start_of_empty_dialogue > 0.3) {
+            set_stage(2);
         }
+    } else if(stage > 0) {
+        if(grav_direction == 0) grav_direction = 1;
     }
+}
+
+function do_grav_switch() {
+    grav_direction *= -1;
+    player_y_velocity /= 3;
 }
 
 /* ======= Game Loop ======= */
@@ -485,6 +579,7 @@ let last_frame_time = get_time();
 function frame() {
     const this_frame_time = get_time();
     const dt = Math.max(Math.min(this_frame_time - last_frame_time, 1 / 15), 0);
+    // window.dt = dt / (1 / 15);
     last_frame_time = this_frame_time;
 
     const SUBSTEPS = 1 + Math.ceil(dt / 0.01);
@@ -509,9 +604,16 @@ function space_key_hit() {
         }
     } else if(stage == 0) {
         set_stage(1);
+    } else {
+        do_grav_switch();
     }
 }
 
 window.addEventListener('keydown', e => {
+    // console.log(e);
     if(e.code == 'Space') space_key_hit();
+    else if(e.code == 'KeyQ') {
+        set_stage(2); // TODO: Remove
+        player_x = 0;
+    }
 });

@@ -10,9 +10,9 @@ def compile_closure(js_source):
         '--compilation_level', 'ADVANCED_OPTIMIZATIONS',
         '--language_out', 'ECMASCRIPT_2021'
     ], input=js_source.encode('utf-8'), capture_output=True)
-    p.check_returncode()
     if p.stderr:
         print("\tClosure stderr:", p.stderr)
+    p.check_returncode()
     return p.stdout.decode('utf-8')
 
 
@@ -32,7 +32,6 @@ def write_html_and_zip(html_source):
         html_out_file.write(html_source)
 
     subprocess.check_call(['bash', '-c', "advzip -4 -a compiled.zip compiled/index.html"])
-
 
 
 watch_mode = '--watch' in sys.argv
