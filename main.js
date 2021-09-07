@@ -401,7 +401,7 @@ function audio_sound_explosion() {
     noise.start(audio_ctx.currentTime);
 }
 
-const base_note = 200;
+const base_note = 220;
 const music_bpm = 70;
 const channel_time_till = [0, 0];
 
