@@ -329,7 +329,7 @@ function frame() {
 
     dt *= 1;
 
-    const SUBSTEPS = 4;
+    const SUBSTEPS = 10;
     for(let substep = 0; substep < SUBSTEPS; ++substep) {
         update(dt / SUBSTEPS);
     }

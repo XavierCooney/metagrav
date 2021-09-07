@@ -6,7 +6,7 @@ const canv = /** @type {HTMLCanvasElement} */ (document.getElementById('c'));
 const ctx = canv.getContext('2d');
 
 const height = 1000;
-const actual_height = 768;
+const actual_height = 600;
 let width;
 
 
@@ -33,6 +33,15 @@ function rand_element_form_arr(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
 }
 
+function triangle_wave(x) {
+    // Period 1
+    return 2 * Math.abs(x - Math.floor(x + 0.5));
+}
+
+function offset_triangle_wave(x) {
+    return triangle_wave(x) - 0.5;
+}
+
 const get_time = () => new Date() / 1000;
 
 /* ======= Global Variables ======= */
@@ -44,11 +53,10 @@ let cam_x = 0;
 let player_y = height / 2;
 let grav_direction = 1;
 let player_y_velocity = 0;
-let forward_velocity = 250;
+let forward_velocity = 330;
 
 let last_explosion_time = -Infinity;
 
-let obstacle_generation_x = 600;
 let difficulty = 0; // [0, 1]
 
 let player_health = 1; // [0, 1]
@@ -61,7 +69,6 @@ const SIDE_BARS_WIDTH = 22;
 
 let stage = 0;
 let substage = 0;
-let stage_start = get_time();
 let stage_elapsed = 0;
 
 const player_points = [
@@ -87,6 +94,9 @@ const player_points = [
 let exhaust_particles = [];
 let last_exhaust_emission = 0;
 const time_between_exhausts = 0.2;
+
+let obstacles = [];
+let obstacle_generation_x = 600;
 
 const dialogue_box_width = 700;
 const dialogue_box_margin = 50;
@@ -117,17 +127,8 @@ function dialogue_done_running() {
     return dialogue_lines_done.length && !characters_to_add_to_line.length && !dialogue_words_left.length;
 }
 
-function render() {
-    ctx.save();
-    ctx.scale(actual_height / height, actual_height / height);
-    // Render stars
-    ctx.fillStyle = '#111';
-    ctx.fillRect(0, 0, width, height);
-
-    const hud_x = [0, 1].includes(stage) ? 0 : lerp(0, HUD_WIDTH, (stage_elapsed - 0.2) * 4);
-    ctx.translate(hud_x, 0);
-
-    for(let i = 0; i < 2e3; ++i) {
+function render_stars() {
+    for(let i = 0; i < 800; ++i) {
         const offset = i ** 4.7;
         const x = (offset * 1.9 % 500) * width / 500;
         const y = (offset % 501) * height / 501;
@@ -138,6 +139,19 @@ function render() {
         ctx.fillStyle = make_colour_string(c, c, c, c);
         ctx.fill();
     }
+}
+
+function render() {
+    ctx.save();
+    ctx.scale(actual_height / height, actual_height / height);
+    // Render stars
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, width, height);
+
+    const hud_x = [0, 1].includes(stage) ? 0 : lerp(0, HUD_WIDTH, (stage_elapsed - 0.2) * 4);
+    ctx.translate(hud_x, 0);
+
+    render_stars();
 
     // Render terrain (parallaxed)
     for(let i = 0; i < 70; ++i) {
@@ -158,8 +172,23 @@ function render() {
         ctx.fill();
     }
 
+
     // Render obstacles
-    // Render ship
+    ctx.save();
+    ctx.translate(-cam_x, 0);
+    obstacles.forEach(o => {
+        o.r();
+    });
+
+    // Render obstacle hitboxes debug
+    obstacles.forEach(o => {
+        ctx.strokeStyle = '#F00';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(o.x, o.y, o.w, o.h);
+    });
+    ctx.restore();
+
+    // render exhaust
     exhaust_particles.forEach(particle => {
         ctx.beginPath();
         const time_since_particle = elapsed_time - particle.t;
@@ -168,7 +197,7 @@ function render() {
         ctx.fill();
     });
 
-
+    // Render ship
     if(stage != 0) {
         ctx.save();
 
@@ -434,12 +463,99 @@ function reset_y_pos() {
 }
 
 function deal_damage(damage, reason) {
-    if(elapsed_time - last_explosion_time < 2.8) {
+    if(elapsed_time - last_explosion_time < 2.5) {
         return;
     }
     player_health -= damage;
     player_health = Math.max(0, player_health);
     cause_explosion();
+}
+
+function make_plasma_obstacle(y_top, h) {
+    const x = obstacle_generation_x;
+
+    function get_internal_colouring() {
+        const colour_offset = 40 * Math.sin(elapsed_time * 3 + x);
+        return make_colour_string(210 + colour_offset, 54, 228 + colour_offset, 1);
+    }
+
+    function make_path_and_set_style() {
+        const path_2d = new Path2D();
+
+        path_2d.moveTo(x, y_top);
+        for(let y_offset = y_top; y_offset <= y_top + h; y_offset += 2) {
+            let wave_offset = 5 * offset_triangle_wave(y_offset / 100 + elapsed_time)
+                            + 1 * offset_triangle_wave(y_offset / 30 - elapsed_time * 3);
+            wave_offset *= 6;
+            wave_offset *= triangle_wave((y_offset - y_top) / h);
+            path_2d.lineTo(x + wave_offset, y_offset);
+        }
+
+        ctx.lineWidth = 12 + 4 * Math.cos((player_x - x) / 100);
+        ctx.strokeStyle = get_internal_colouring();
+        ctx.lineCap = 'round';
+
+        return path_2d;
+    }
+
+    return {
+        x: x - 100,
+        w: 200,
+        y: y_top - 100,
+        h: h + 200,
+        r: () => {
+            ctx.beginPath();
+
+            function render_circ(circ_y, r) {
+                ctx.beginPath();
+                ctx.arc(x, circ_y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.fillStyle = '#4d36ff';
+            render_circ(y_top, 20);
+            render_circ(y_top + h, 20);
+            // ctx.fillStyle = get_internal_colouring();
+            // render_circ(y_top + 10, 10);
+            // render_circ(y_top + h - 10, 10);
+
+            const main_path = make_path_and_set_style();
+            ctx.stroke(main_path);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#3d36ff';
+            ctx.stroke(main_path);
+        },
+        i: () => {
+            const main_path = make_path_and_set_style();
+            for(let i = 0; i < player_points.length; ++i) {
+                if(ctx.isPointInStroke(main_path, player_points[i][0] + player_x, player_points[i][1] + player_y)) {
+                    return true;
+                }
+            };
+        }
+    };
+}
+
+function generate_obstacle() {
+    const decision_main = Math.random();
+    const start_of_obstacle_x = obstacle_generation_x;
+
+    if(decision_main < 0.3) {
+        // centre plasma obstacle (separator)
+        obstacles.push(make_plasma_obstacle(rlerp(0, 450), rlerp(250, 350)));
+        obstacle_generation_x += 700;
+    } else if(decision_main < 0.6) {
+        // plasma field
+        const end_of_obstacle_x = obstacle_generation_x + rlerp();
+    }
+
+    if(Math.random() > 0.5) {
+
+    }
+}
+
+function do_two_boxes_collide(b1, b2) {
+    return b1.x < b2.x + b2.w && b1.x + b1.w > b2.x && b1.y < b2.y + b2.h && b1.y + b1.h > b2.y;
 }
 
 function update(dt) {
@@ -472,7 +588,7 @@ function update(dt) {
     player_x += forward_velocity * dt;
     cam_x = Math.max(600, player_x) - 600;
 
-    player_y_velocity += grav_direction * dt * 375;
+    player_y_velocity += grav_direction * dt * 1000;
     player_y += player_y_velocity * dt;
 
     if(player_y < 60) {
@@ -485,11 +601,38 @@ function update(dt) {
         }
     }
 
-    if(player_y > 800) {
+    if(player_y > 850) {
         player_y -= 50;
         player_y_velocity = 0;
-        deal_damage(1 / 5);
+        deal_damage(1 / 5, 'floor');
         grav_direction = -1;
+    }
+
+    let player_box = {
+        x: player_x - 100,
+        y: player_y - 40,
+        w: 150,
+        h: 80
+    }
+
+    obstacles.forEach(o => {
+        if(do_two_boxes_collide(o, player_box) && o.i()) {
+            deal_damage(1 / 5, 'a');
+        }
+    });
+
+    while(obstacles.length && obstacles[0].x + obstacles[0].w < cam_x) {
+        obstacles.shift();
+    }
+
+    if(stage != 0) {
+        while(obstacle_generation_x < cam_x + width + 100) {
+            if(stage == 1) {
+                obstacle_generation_x += 100;
+            } else {
+                generate_obstacle();
+            }
+        }
     }
 
     if(displayed_player_health > player_health) {
@@ -549,6 +692,9 @@ function update(dt) {
             add_dialogue_nl("# # # # Update: I was wrong. It's all bad news actually. # Almost every control is scrambled. In fact, the only thing that's working seems to be the internal gravitational actuator. # I've wired up the [SPACE] button on your control matrix to it. The orbital navigation system should keep you from flying up to outer space, but uhhhh still... # be careful.");
             substage = 4;
         } else if(substage == 4 && elapsed_time - start_of_empty_dialogue > 0.3) {
+            obstacle_generation_x += 900;
+            obstacles.push(make_plasma_obstacle(-20, 500));
+            obstacle_generation_x += 500;
             set_stage(2);
         }
     } else if(stage > 0) {
@@ -558,7 +704,7 @@ function update(dt) {
 
 function do_grav_switch() {
     grav_direction *= -1;
-    player_y_velocity /= 3;
+    player_y_velocity /= 4;
 }
 
 /* ======= Game Loop ======= */
@@ -578,11 +724,13 @@ let last_frame_time = get_time();
 
 function frame() {
     const this_frame_time = get_time();
-    const dt = Math.max(Math.min(this_frame_time - last_frame_time, 1 / 15), 0);
-    // window.dt = dt / (1 / 15);
+    let dt = Math.max(Math.min(this_frame_time - last_frame_time, 1 / 15), 0);
+    window.dt_percent = dt / (1 / 15);
     last_frame_time = this_frame_time;
 
-    const SUBSTEPS = 1 + Math.ceil(dt / 0.01);
+    // dt *= 1.5;
+    const SUBSTEPS = 1 + Math.ceil(dt / 0.03);
+    // console.log(dt / SUBSTEPS);
     for(let substep = 0; substep < SUBSTEPS; ++substep) {
         update(dt / SUBSTEPS);
     }
