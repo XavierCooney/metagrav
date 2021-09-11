@@ -180,11 +180,11 @@ function render() {
         o.r();
     });
 
-    // Render obstacle hitboxes debug
+    // Render obstacle hitboxes debug bounding
     obstacles.forEach(o => {
         ctx.strokeStyle = '#F00';
         ctx.lineWidth = 2;
-        ctx.strokeRect(o.x, o.y, o.w, o.h);
+        // ctx.strokeRect(o.x, o.y, o.w, o.h);
     });
     ctx.restore();
 
@@ -232,9 +232,19 @@ function render() {
         ctx.fill();
         ctx.stroke();
         ctx.fillStyle = '#3BE';
-        ctx.fillRect(-8, -8, 10, 16);
-        ctx.fillRect(-24, -8, 10, 16);
-        ctx.fillRect(-40, -8, 10, 16);
+        ctx.fillRect(-6, -8, 10, 16);
+        if(grav_direction == 0) {
+            ctx.fillRect(-24, -8, 10, 16);
+        } else {
+            // Arrow
+            ctx.beginPath();
+            ctx.moveTo(-19, grav_direction * 8);
+            ctx.lineTo(-28, -grav_direction * 8);
+            ctx.lineTo(-10, -grav_direction * 8);
+            ctx.closePath();
+            ctx.fill();
+        }
+        ctx.fillRect(-42, -8, 10, 16);
         ctx.restore();
     }
 
@@ -512,9 +522,10 @@ function make_plasma_obstacle(y_top, h) {
                 ctx.fill();
             }
 
-            ctx.fillStyle = '#4d36ff';
-            render_circ(y_top, 20);
-            render_circ(y_top + h, 20);
+            ctx.fillStyle = get_internal_colouring() // '#3d36ff' // '#4d36ff';
+            let circle_radius = lerp(16, 12, 0.5 + 0.5 * Math.cos((player_x - x) / 100));
+            render_circ(y_top, circle_radius);
+            render_circ(y_top + h, circle_radius);
             // ctx.fillStyle = get_internal_colouring();
             // render_circ(y_top + 10, 10);
             // render_circ(y_top + h - 10, 10);
@@ -536,22 +547,109 @@ function make_plasma_obstacle(y_top, h) {
     };
 }
 
+function make_meteorite(x, y) {
+    obstacles.push({
+        x: x - 10,
+        y: y - 10,
+        w: 20,
+        h: 20,
+        r: () => {
+            ctx.fillStyle = '#F00';
+            ctx.fillRect(x - 10, y - 10, 20, 20);
+        },
+        i: () => {
+        }
+    })
+}
+
+function make_coin(x, y) {
+    if(Math.random() > 0.6) {
+        // There's no guarentees in life
+        return;
+    }
+
+    let time_eaten = Infinity;
+
+    obstacles.push({
+        x: x - 50,
+        w: 100,
+        y: y - 50,
+        h: 100,
+        r: () => {
+            const eaten_t = lerp((Math.sin(elapsed_time * 3) + 1) / 10, 1, (elapsed_time - time_eaten) / 0.4);
+            if(eaten_t >= 1) return;
+
+            ctx.save();
+            const translation_t = (elapsed_time - time_eaten) / 0.42;
+            ctx.translate(lerp(x, player_x, translation_t), lerp(y, player_y, translation_t));
+            ctx.beginPath();
+            ctx.arc(0, 0, lerp(50, 0, eaten_t), 0, Math.PI * 2);
+            ctx.lineWidth = 10;
+            ctx.fillStyle = '#f7c65c';
+            ctx.strokeStyle = '#fff700';
+            ctx.fill();
+            ctx.stroke();
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = 'round';
+            for(let i = 7; i < 40; i += 7) {
+                const offset = (elapsed_time * i) / 10;
+                ctx.beginPath();
+                ctx.arc(0, 0, lerp(i, 0, eaten_t), offset + Math.PI / 4, offset + 3 * Math.PI / 4, false);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(0, 0, lerp(i, 0, eaten_t), offset + 5 * Math.PI / 4, offset + 7 * Math.PI / 4, false);
+                ctx.stroke();
+            }
+            ctx.restore();
+        },
+        i: () => {
+            time_eaten = Math.min(time_eaten, elapsed_time);
+        }
+    });
+}
+
 function generate_obstacle() {
     const decision_main = Math.random();
     const start_of_obstacle_x = obstacle_generation_x;
 
-    if(decision_main < 0.3) {
+    if(decision_main < 0.1) {
         // centre plasma obstacle (separator)
         obstacles.push(make_plasma_obstacle(rlerp(0, 450), rlerp(250, 350)));
         obstacle_generation_x += 700;
-    } else if(decision_main < 0.6) {
+    } else if(decision_main < 0.5) {
         // plasma field
-        const end_of_obstacle_x = obstacle_generation_x + rlerp();
+        const end_of_obstacle_x = start_of_obstacle_x + rlerp(1800, 3200);
+        while(obstacle_generation_x < end_of_obstacle_x) {
+            // 'Pillars of doom'
+            const sub_decision = Math.random();
+            if(sub_decision < 0.2) {
+                // Middle
+                obstacles.push(make_plasma_obstacle(250, 400));
+                make_coin(obstacle_generation_x + 300, 450)
+                obstacle_generation_x += rlerp(650, 800);
+            } else if(sub_decision < 0.4) {
+                // Vertical
+                obstacles.push(make_plasma_obstacle(-100, 650));
+                make_coin(obstacle_generation_x + 300, 300)
+                obstacle_generation_x += rlerp(700, 800);
+            } else if(sub_decision < 0.6) {
+                obstacles.push(make_plasma_obstacle(250, 1750));
+                make_coin(obstacle_generation_x + 300, 600)
+                obstacle_generation_x += rlerp(700, 800);
+            }
+        }
+    } else if(decision_main < 0.9) {
+        // Asteroid/meteorite field
+        const target_num_metoerites = 80;
+        for(let num_done = 0; num_done < target_num_metoerites; ++num_done) {
+            const half_height_range = lerp(125, 500);
+            const new_y = lerp()
+        }
     }
 
-    if(Math.random() > 0.5) {
+    // if(Math.random() > 0.5) {
 
-    }
+    // }
 }
 
 function do_two_boxes_collide(b1, b2) {
@@ -757,11 +855,24 @@ function space_key_hit() {
     }
 }
 
+let last_non_reversed_keydown = -1;
+
 window.addEventListener('keydown', e => {
-    // console.log(e);
-    if(e.code == 'Space') space_key_hit();
+    if(e.code == 'Space') {
+        if(last_non_reversed_keydown < 0) {
+            last_non_reversed_keydown = elapsed_time;
+            space_key_hit();
+        }
+    }
+
     else if(e.code == 'KeyQ') {
         set_stage(2); // TODO: Remove
         player_x = 0;
+    }
+});
+
+window.addEventListener('keyup', e => {
+    if(e.code == 'Space') {
+        last_non_reversed_keydown = -1;
     }
 });
