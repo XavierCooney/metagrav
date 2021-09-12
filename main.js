@@ -62,6 +62,8 @@ let difficulty = 0; // [0, 1]
 let player_health = 1; // [0, 1]
 let displayed_player_health = 1;
 let coins_gotten = 0;
+let coins_needed = 0;
+let regenerator_repaired = false;
 
 
 const TOP_BAR = 22;
@@ -70,6 +72,7 @@ const SIDE_BARS_WIDTH = 22;
 let stage = 0;
 let substage = 0;
 let stage_elapsed = 0;
+let start_of_stage_x = 0;
 
 const player_points = [
     [30, 0],
@@ -97,14 +100,15 @@ const time_between_exhausts = 0.2;
 
 let obstacles = [];
 let obstacle_generation_x = 600;
+let lasers = []; // {x: number, y: number}
 
 const dialogue_box_width = 700;
 const dialogue_box_margin = 50;
-const dialogue_rate = 0.08;
+const dialogue_rate = 0.05;
 
 let skip_dialogue_pressed = false;
 
-let graphics_mode = parseInt(localStorage['xav-space-js13k-graphics']); // 0 fancy, 1 normal, 2 basic
+let graphics_mode = Number(window.localStorage['xav-space-js13k-graphics']); // 0 fancy, 1 normal, 2 basic
 if(![0, 1, 2].includes(graphics_mode)) {
     graphics_mode = 1;
 }
@@ -128,7 +132,7 @@ let dialogue_lines_done = [];
 let characters_to_add_to_line = [];
 let dialogue_words_left = [];
 let start_of_empty_dialogue = Infinity;
-const stages_with_dialogue_screen = [1];
+const stages_with_dialogue_screen = [1, 3, 5, 6, 8];
 let can_skip_dialogue = true;
 let need_space_to_proceed = false;
 
@@ -157,6 +161,55 @@ function make_font_name(font_size) {
     return `${font_size}px 'Press Start 2P', monospace`;
 }
 
+function coin_accent_col() {
+    if(stage == 4) {
+        return '#ff0000';
+    } else if(stage == 7) {
+        return '#00f02c';
+    } else {
+        return '#fff700';
+    }
+}
+
+function coin_fill_col() {
+    if(stage == 4) {
+        return '#ff7575';
+    } else if(stage == 7) {
+        return '#97fcd1';
+    } else {
+        return '#f7c65c';
+    }
+}
+
+function is_fade_away_stage() {
+    return stage == 5 || stage == 6 || stage == 8;
+}
+function render_coin(x, y, eaten_t, translation_t) {
+    if(is_fade_away_stage()) return; // darn I should've designed this better
+    if(eaten_t >= 1) return;
+    ctx.save();
+    ctx.translate(lerp(x, player_x, translation_t), lerp(y, player_y, translation_t));
+    ctx.beginPath();
+    ctx.arc(0, 0, lerp(40, 0, eaten_t), 0, Math.PI * 2);
+    ctx.lineWidth = 8;
+    ctx.fillStyle = coin_fill_col();
+    ctx.strokeStyle = coin_accent_col();
+    ctx.fill();
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    for(let i = 5.6; i < 32; i += 7) {
+        const offset = (elapsed_time * i) / 10;
+        ctx.beginPath();
+        ctx.arc(0, 0, lerp(i, 0, eaten_t), offset + Math.PI / 4, offset + 3 * Math.PI / 4, false);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, 0, lerp(i, 0, eaten_t), offset + 5 * Math.PI / 4, offset + 7 * Math.PI / 4, false);
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
 function render() {
     ctx.save();
     ctx.scale(actual_height / height, actual_height / height);
@@ -164,7 +217,7 @@ function render() {
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, width, height);
 
-    const hud_x = [0, 1].includes(stage) ? 0 : lerp(0, HUD_WIDTH, (stage_elapsed - 0.2) * 4);
+    const hud_x = [0, 1].includes(stage) ? 0 : (stage == 2 ? lerp(0, HUD_WIDTH, (stage_elapsed - 0.2) * 4) : HUD_WIDTH);
     ctx.translate(hud_x, 0);
 
     render_stars();
@@ -192,6 +245,10 @@ function render() {
     // Render obstacles
     ctx.save();
     ctx.translate(-cam_x, 0);
+    ctx.save();
+    if(is_fade_away_stage()) {
+        ctx.globalAlpha = lerp(1, 0, stage_elapsed * 0.8);
+    }
     obstacles.forEach(o => {
         o.r();
     });
@@ -200,8 +257,9 @@ function render() {
     obstacles.forEach(o => {
         ctx.strokeStyle = '#F00';
         ctx.lineWidth = 2;
-        // ctx.strokeRect(o.x, o.y, o.w, o.h);
+        ctx.strokeRect(o.x, o.y, o.w, o.h);
     });
+    ctx.restore();
     ctx.restore();
 
     // render exhaust
@@ -272,12 +330,13 @@ function render() {
         ctx.font = make_font_name(68 + 16 * Math.sin(1.3 * elapsed_time - 1.3));
         ctx.fillText("METAGRAV", width / 2, 50);
 
-        const body_offset = 0 // 12 * Math.sin(1.3 * elapsed_time);
+        const body_offset = lerp(-150, 0, elapsed_time - 2) // 12 * Math.sin(1.3 * elapsed_time);
         ctx.fillStyle = make_colour_string(255, 255, 255, lerp(0, 1, stage_elapsed / 1 - 2));
         ctx.font = make_font_name(40);
         ctx.fillText("Press [SPACE] to Start", width / 2, 300 + body_offset);
         ctx.fillText(`AUDIO ${get_muted() ? 'MUTED' : 'ON'} (switch with [m])`, width / 2, 380 + body_offset);
         ctx.fillText(`GRAPHICS ${['FANCY', 'NORMAL', 'BASIC'][graphics_mode]} (switch with [g])`, width / 2, 460 + body_offset);
+        ctx.fillText(`A game by Xavier Cooney for js13k`, width / 2, 620 + body_offset); // :]
     }
 
     // Render HUD
@@ -292,17 +351,26 @@ function render() {
         ctx.stroke();
 
         ctx.fillStyle = '#7d1111';
-        ctx.fillRect(-HUD_WIDTH * 2 / 3, 40, HUD_WIDTH / 3, 400);
-        const actual_height = 400 * displayed_player_health;
+        ctx.fillRect(-HUD_WIDTH * 2 / 3, 40, HUD_WIDTH / 3, 700);
+        const actual_height = 700 * displayed_player_health;
         ctx.fillStyle = '#ff1919';
-        ctx.fillRect(-HUD_WIDTH * 2 / 3, 40 + 400 - actual_height, HUD_WIDTH / 3, actual_height);
+        ctx.fillRect(-HUD_WIDTH * 2 / 3, 40 + 700 - actual_height, HUD_WIDTH / 3, actual_height);
+
+        if(coins_needed > 0) {
+            render_coin(-hud_x / 2, 860, 0, 0);
+            ctx.fillStyle = coin_fill_col();
+            ctx.font = make_font_name(20);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'hanging';
+            ctx.fillText(`${coins_gotten}/${coins_needed}`, -hud_x / 2, 930)
+        }
     }
 
     ctx.translate(-hud_x, 0);
 
     // Render dialogue
     if(stages_with_dialogue_screen.includes(stage)) {
-        let dialogue_window_x = lerp(width, width - dialogue_box_width - dialogue_box_margin, stage_elapsed);
+        let dialogue_window_x = lerp(width + 10, width - dialogue_box_width - dialogue_box_margin, stage_elapsed + (is_fade_away_stage() ? -2 : 0));
         ctx.fillStyle = '#DDD';
         ctx.fillRect(dialogue_window_x, dialogue_box_margin, dialogue_box_width, height - 2 * dialogue_box_margin);
         ctx.strokeStyle = '#888';
@@ -488,19 +556,37 @@ function add_dialogue_nl(dialogue) {
     dialogue_newline();
 }
 
-function reset_y_pos() {
-    player_y = height / 2;
+function reset_y_pos(dt) {
+    player_y -= (player_y - height / 4) / 3 * dt;
     player_y_velocity = 0;
     grav_direction = 0;
 }
 
 function deal_damage(damage, reason) {
-    if(elapsed_time - last_explosion_time < 2.5) {
+    if(elapsed_time - last_explosion_time < 2 || is_fade_away_stage()) {
         return;
     }
-    player_health -= damage;
-    player_health = Math.max(0, player_health);
+    if(stage == 2 || stages_with_dialogue_screen.includes(stage)) {
+        // you can never die in stage 2 or when there's dialogue on screen
+        player_health *= (1 - damage);
+        player_health = Math.max(player_health, 0.05);
+    } else {
+        player_health -= damage;
+        player_health = Math.max(0, player_health);
+
+        if(player_health <= 0) {
+            player_died();
+        }
+    }
+
     cause_explosion();
+}
+
+let player_died_from_stage;
+
+function player_died() {
+    player_died_from_stage = stage;
+    set_stage(5);
 }
 
 function make_plasma_obstacle(y_top, h) {
@@ -515,7 +601,7 @@ function make_plasma_obstacle(y_top, h) {
         const path_2d = new Path2D();
 
         path_2d.moveTo(x, y_top);
-        for(let y_offset = y_top; y_offset <= y_top + h; y_offset += 2) {
+        for(let y_offset = y_top; y_offset <= y_top + h; y_offset += [1, 2, 4][graphics_mode]) {
             let wave_offset = 5 * offset_triangle_wave(y_offset / 100 + elapsed_time)
                             + 1 * offset_triangle_wave(y_offset / 30 - elapsed_time * 3);
             wave_offset *= 6;
@@ -562,7 +648,7 @@ function make_plasma_obstacle(y_top, h) {
             const main_path = make_path_and_set_style();
             for(let i = 0; i < player_points.length; ++i) {
                 if(ctx.isPointInStroke(main_path, player_points[i][0] + player_x, player_points[i][1] + player_y)) {
-                    return true;
+                    deal_damage(1 / 4, 'plasma');
                 }
             };
         }
@@ -570,7 +656,7 @@ function make_plasma_obstacle(y_top, h) {
 }
 
 function make_meteorite(x, y) {
-    const RADIUS = 15;
+    const RADIUS = rlerp(15, 25);
 
     const final_y = y;
     const final_x = x;
@@ -594,7 +680,7 @@ function make_meteorite(x, y) {
 
         path.moveTo(x + RADIUS + offset_function(0), y);
 
-        for(let theta = 0; theta <= Math.PI * 2; theta += 0.05) {
+        for(let theta = 0; theta <= Math.PI * 2; theta += [0.06, 0.08, 0.15][graphics_mode]) {
             path.lineTo(
                 x + (RADIUS + offset_function(theta)) * Math.cos(theta),
                 y + (RADIUS + offset_function(theta)) * Math.sin(theta)
@@ -629,7 +715,7 @@ function make_meteorite(x, y) {
                 //     return true;
                 // }
                 if(ctx.isPointInPath(main_path,  player_points[i][0] + player_x, player_points[i][1] + player_y)) {
-                    return true;
+                    deal_damage(1 / 9, 'meteor');
                 }
             };
         },
@@ -645,43 +731,28 @@ function make_coin(x, y) {
         // There's no guarentees in life
         return;
     }
+    if(stage == 2) return;
 
     let time_eaten = Infinity;
+    let has_been_eaten = false;
 
     obstacles.push({
-        x: x - 50,
-        w: 100,
-        y: y - 50,
-        h: 100,
+        x: x - 40,
+        w: 80,
+        y: y - 40,
+        h: 80,
         r: () => {
             const eaten_t = lerp((Math.sin(elapsed_time * 3) + 1) / 10, 1, (elapsed_time - time_eaten) / 0.4);
-            if(eaten_t >= 1) return;
-
-            ctx.save();
             const translation_t = (elapsed_time - time_eaten) / 0.42;
-            ctx.translate(lerp(x, player_x, translation_t), lerp(y, player_y, translation_t));
-            ctx.beginPath();
-            ctx.arc(0, 0, lerp(50, 0, eaten_t), 0, Math.PI * 2);
-            ctx.lineWidth = 10;
-            ctx.fillStyle = '#f7c65c';
-            ctx.strokeStyle = '#fff700';
-            ctx.fill();
-            ctx.stroke();
-            ctx.lineWidth = 2.5;
-            ctx.lineCap = 'round';
-            for(let i = 7; i < 40; i += 7) {
-                const offset = (elapsed_time * i) / 10;
-                ctx.beginPath();
-                ctx.arc(0, 0, lerp(i, 0, eaten_t), offset + Math.PI / 4, offset + 3 * Math.PI / 4, false);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.arc(0, 0, lerp(i, 0, eaten_t), offset + 5 * Math.PI / 4, offset + 7 * Math.PI / 4, false);
-                ctx.stroke();
-            }
-            ctx.restore();
+
+            render_coin(x, y, eaten_t, translation_t);
         },
         i: () => {
             time_eaten = Math.min(time_eaten, elapsed_time);
+            if(!has_been_eaten) {
+                has_been_eaten = true;
+                coin_collected();
+            }
         }
     });
 }
@@ -696,8 +767,8 @@ function generate_obstacle() {
         obstacle_generation_x += 700;
     } else if(decision_main < 0.5) {
         // plasma field
-        const end_of_obstacle_x = start_of_obstacle_x + rlerp(1800, 3200);
-        while(obstacle_generation_x < end_of_obstacle_x) {
+        const end_of_obstacle_x = start_of_obstacle_x + (stage == 2 ? 1000 : rlerp(1800, 3200));
+        while(obstacle_generation_x <= end_of_obstacle_x) {
             // 'Pillars of doom'
             const sub_decision = Math.random();
             if(sub_decision < 0.2) {
@@ -716,7 +787,7 @@ function generate_obstacle() {
                 obstacle_generation_x += rlerp(700, 800);
             }
         }
-    } else if(decision_main < 0.9) {
+    } else if(decision_main < 0.9 && stage != 2) {
         // Asteroid/meteorite field
         const target_num_metoerites = 60;
         obstacle_generation_x += 50;
@@ -726,8 +797,14 @@ function generate_obstacle() {
             if(Math.random() > 0.5) {
                 new_y = 840 - new_y;
             }
-            make_meteorite(obstacle_generation_x, new_y);
-            obstacle_generation_x += 80;
+            if(new_y > 100 && new_y < 740 && Math.random() > 0.9) {
+                obstacle_generation_x += 80;
+                make_coin(obstacle_generation_x, new_y);
+                obstacle_generation_x += 120;
+            } else {
+                obstacle_generation_x += 80;
+                make_meteorite(obstacle_generation_x, new_y);
+            }
         }
         obstacle_generation_x += 300;
     }
@@ -735,6 +812,27 @@ function generate_obstacle() {
 
 function do_two_boxes_collide(b1, b2) {
     return b1.x < b2.x + b2.w && b1.x + b1.w > b2.x && b1.y < b2.y + b2.h && b1.y + b1.h > b2.y;
+}
+
+function norm_dialogue_next() {
+    substage += 1;
+    dialogue_lines_done = [];
+    can_skip_dialogue = true;
+    need_space_to_proceed = true;
+}
+
+function coin_collected() {
+    if(!stages_with_dialogue_screen.includes(stage) && !is_fade_away_stage()) {
+        coins_gotten += 1;
+
+        if(coins_gotten == coins_needed) {
+            if(stage == 4) {
+                set_stage(6);
+            } else if(stage == 7) {
+                set_stage(8);
+            }
+        }
+    }
 }
 
 function update(dt) {
@@ -799,7 +897,7 @@ function update(dt) {
             o.u(dt);
         }
         if(do_two_boxes_collide(o, player_box) && o.i()) {
-            deal_damage(1 / 5, 'a');
+            // wat
         }
     });
 
@@ -809,7 +907,7 @@ function update(dt) {
 
     if(stage != 0) {
         while(obstacle_generation_x < cam_x + width + 100) {
-            if(stage == 1) {
+            if(stages_with_dialogue_screen.includes(stage) || (stage == 2 && substage == 1)) {
                 obstacle_generation_x += 100;
             } else {
                 generate_obstacle();
@@ -823,7 +921,12 @@ function update(dt) {
         displayed_player_health += Math.min(dt / 2, player_health - displayed_player_health);
     }
 
-    if(characters_to_add_to_line.length) {
+    if(regenerator_repaired && stage != 5) {
+        player_health += dt / 120;
+        player_health = Math.min(player_health, 1);
+    }
+
+    if(characters_to_add_to_line.length && (stage != 5 || stage_elapsed > 2)) {
         if(characters_to_add_to_line[0] == '#') {
             if(skip_dialogue_pressed || elapsed_time - last_dialogue_character_added > 0.5) {
                 characters_to_add_to_line.shift();
@@ -845,10 +948,11 @@ function update(dt) {
         start_of_empty_dialogue = Infinity;
     }
 
+    // EXPOSITION/DIALOGUE
     if(stage == 1) {
-        reset_y_pos();
+        reset_y_pos(dt);
         player_y = height / 4;
-        if(substage == 0 && stage_elapsed > 1) {
+        if(substage == 0 && stage_elapsed > 2) {
             add_dialogue_nl('[HYPERSPACE ANOMALY DETECTED] \n');
             add_dialogue_nl('# [STARTING SHIP AI] \n');
             add_dialogue_nl('# # # Hello there, # I am OSCAR, your Onboard Ship Computational Analysis Reporter. Please standby... \n');
@@ -861,26 +965,90 @@ function update(dt) {
             need_space_to_proceed = true;
             substage = 2;
         } else if(substage == 2 && elapsed_time - start_of_empty_dialogue > 0.3) {
-            dialogue_lines_done = [];
-            can_skip_dialogue = true;
-            need_space_to_proceed = true;
+            norm_dialogue_next();
             add_dialogue_nl("I have detected some good news and some bad news. # The bad news is that the ship has exited hyperspace onto a planet 200 parsecs away from the target desination. # The good news is that all the ship's systems are intact...");
-            substage = 3;
         } else if(substage == 3 && elapsed_time - start_of_empty_dialogue > 0.1) {
             cause_explosion();
-            dialogue_lines_done = [];
-            can_skip_dialogue = true;
-            need_space_to_proceed = true;
+            norm_dialogue_next();
             add_dialogue_nl("# # # # Update: I was wrong. It's all bad news actually. # Almost every control is scrambled. In fact, the only thing that's working seems to be the internal gravitational actuator. # I've wired up the [SPACE] button on your control matrix to it. The orbital navigation system should keep you from flying up to outer space, but uhhhh still... # be careful.");
-            substage = 4;
         } else if(substage == 4 && elapsed_time - start_of_empty_dialogue > 0.3) {
             obstacle_generation_x += 900;
             obstacles.push(make_plasma_obstacle(-20, 500));
             obstacle_generation_x += 500;
             set_stage(2);
         }
+    } else if(stage == 3) {
+        reset_y_pos(dt);
+
+        if(substage == 0) {
+            norm_dialogue_next();
+            add_dialogue("Hi. OSCAR here again. I realised I should've probably warned you about the plasma arcs usually found in this planetary system, ");
+            if(player_health < 1) {
+                // Coild've just hit the ground, not the plasma. But the advice still stands
+                add_dialogue("sorry. Regardless, as a rule of thumb, I advise tring not to hit big scary looking stuff. # # Or small scary looking stuff.");
+            } else {
+                add_dialogue("but it looks like you've already got that handled. Good job.");
+            }
+        } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            norm_dialogue_next();
+            add_dialogue("To get out of here, you'll need to collect some materials. # Try to pick up any red coloured part bundles you find, # and if you get enough I might be able to fix the ship's hull regeneration system.");
+            if(player_health < 1) {
+                add_dialogue("And try not to hit anything else.");
+            }
+        } else if(substage == 2 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            set_stage(4);
+        }
+    } else if(stage == 5) {
+        reset_y_pos(dt);
+
+        if(substage == 0 && stage_elapsed > 2) {
+            player_health = 1;
+            norm_dialogue_next();
+            add_dialogue("Well it looks like the hull's been severly damaged. Luckily I phase shifted the ship into a different timeline right before the engine exploded.");
+            if(coins_gotten == 0) {
+                add_dialogue("At least you didn't lose any of the parts you were gathering.");
+            } else {
+                add_dialogue(`Alas, you lost ${coins_gotten} part${coins_gotten == 1 ? '' : 's'} you were gathering.`);
+            }
+            coins_gotten = 0;
+        } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            obstacles = [];
+            set_stage(player_died_from_stage);
+        }
+    } else if(stage == 6) {
+        reset_y_pos(dt);
+
+        if(substage == 0 && stage_elapsed > 2) {
+            coins_gotten = 0;
+            norm_dialogue_next();
+            add_dialogue("Great work! Now I should be able to to repair the hull regenerator...");
+        } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            norm_dialogue_next();
+            regenerator_repaired = true;
+            add_dialogue("Done! This should help with those meteorites that I probably should've warned you about. Next thing to fix is the ship's LASER, for that you'll need to collect green part bundles.");
+        } else if(substage == 2 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            set_stage(7);
+        }
+        reset_y_pos(dt);
+    } else if(stage == 8) {
+        reset_y_pos(dt);
+
+        if(substage == 0 && stage_elapsed > 2) {
+            coins_gotten = 0;
+            norm_dialogue_next();
+            add_dialogue("Brilliant! LASER time!! # # # Also, sorry, but I slightly exaggerated the need to repair the space LASER. It's just my circuits really like shooting LASERs. Anyway...");;
+        }
     } else if(stage > 0) {
         if(grav_direction == 0) grav_direction = 1;
+    }
+
+    // PLAY STAGES
+    if(stage == 2) {
+        if(substage == 0 && player_x > start_of_stage_x + 2000) {
+            substage = 1;
+        } else if(substage == 1 && obstacles.length === 0) {
+            set_stage(3);
+        }
     }
 }
 
@@ -897,9 +1065,19 @@ function set_stage(new_stage) {
         init_audio();
     }
 
+    if(new_stage == 4) {
+        coins_needed = 10;
+    } else if(new_stage == 7) {
+        coins_needed = 20;
+        regenerator_repaired = true;
+    }  else {
+        coins_needed = 0;
+    }
+
     stage = new_stage;
     substage = 0;
     stage_elapsed = 0;
+    start_of_stage_x = obstacle_generation_x;
 }
 
 let last_frame_time = get_time();
@@ -929,7 +1107,7 @@ function space_key_hit() {
             if(need_space_to_proceed) {
                 need_space_to_proceed = false;
             }
-        } else if(can_skip_dialogue) {
+        } else if(can_skip_dialogue && (stage == 1 || stage_elapsed > 0.3)) {
             skip_dialogue_pressed = true;
         }
     } else if(stage == 0) {
@@ -948,14 +1126,14 @@ window.addEventListener('keydown', e => {
             space_key_hit();
         }
     } else if(e.code == 'KeyQ') {
-        set_stage(2); // TODO: Remove
+        set_stage(7); // TODO: Remove
         player_x = 0;
     } else if(e.code == 'KeyM') {
         set_muted(!get_muted());
     } else if(e.code == 'KeyG') {
         graphics_mode += 1;
         graphics_mode %= 3;
-        localStorage['xav-space-js13k-graphics'] = graphics_mode;
+        window.localStorage['xav-space-js13k-graphics'] = graphics_mode;
         process_graphics_change();
     }
 });
