@@ -548,16 +548,72 @@ function make_plasma_obstacle(y_top, h) {
 }
 
 function make_meteorite(x, y) {
+    const RADIUS = 15;
+
+    const final_y = y;
+    const final_x = x;
+    let speed_y = rlerp(-0.1, 0.5);
+    if(Math.random() < 0.6) {
+        speed_y = 0;
+    }
+    speed_y = 0;
+    const speed_x = 0 // Math.max(0, rlerp(-0.3, 0.2));
+
+    function offset_function(theta) {
+        return 1.3 * (
+            Math.sin(5 * theta + elapsed_time * 0.5)
+            + Math.sin(6 * theta - elapsed_time * 0.7)
+            + 0.5 * Math.sin(11 * theta + elapsed_time * 10)
+        );
+    }
+
+    function make_path_and_set_style() {
+        const path = new Path2D();
+
+        path.moveTo(x + RADIUS + offset_function(0), y);
+
+        for(let theta = 0; theta <= Math.PI * 2; theta += 0.05) {
+            path.lineTo(
+                x + (RADIUS + offset_function(theta)) * Math.cos(theta),
+                y + (RADIUS + offset_function(theta)) * Math.sin(theta)
+            );
+        }
+        path.closePath();
+
+        ctx.lineWidth = 4;
+        return path;
+    }
+
     obstacles.push({
-        x: x - 10,
-        y: y - 10,
-        w: 20,
-        h: 20,
+        x: x - 20,
+        y: y - 20,
+        w: 40,
+        h: 40,
         r: () => {
-            ctx.fillStyle = '#F00';
-            ctx.fillRect(x - 10, y - 10, 20, 20);
+            ctx.strokeStyle = '#3d130a';
+            const path = make_path_and_set_style();
+            let gradient = ctx.createRadialGradient(x, y, 0, x , y, RADIUS);
+            gradient.addColorStop(0, '#66291c');
+            gradient.addColorStop(1, '#964230');
+            ctx.fillStyle = gradient;
+            ctx.fill(path);
+            ctx.stroke(path);
         },
         i: () => {
+            // TODO: combine this behaviour with the plasma field and and more points to the player ship
+            const main_path = make_path_and_set_style();
+            for(let i = 0; i < player_points.length; ++i) {
+                if(ctx.isPointInStroke(main_path, player_points[i][0] + player_x, player_points[i][1] + player_y)) {
+                    return true;
+                }
+                if(ctx.isPointInPath(main_path,  player_points[i][0] + player_x, player_points[i][1] + player_y)) {
+                    return true;
+                }
+            };
+        },
+        u: () => {
+            y = final_y + (player_x - final_x) * speed_y;
+            x = final_x + (player_x - final_x) * speed_x;
         }
     })
 }
@@ -640,16 +696,19 @@ function generate_obstacle() {
         }
     } else if(decision_main < 0.9) {
         // Asteroid/meteorite field
-        const target_num_metoerites = 80;
+        const target_num_metoerites = 60;
+        obstacle_generation_x += 50;
         for(let num_done = 0; num_done < target_num_metoerites; ++num_done) {
-            const half_height_range = lerp(125, 500);
-            const new_y = lerp()
+            const half_height_range = lerp(125, 420, num_done / 20);
+            let new_y = rlerp(0, half_height_range);
+            if(Math.random() > 0.5) {
+                new_y = 840 - new_y;
+            }
+            make_meteorite(obstacle_generation_x, new_y);
+            obstacle_generation_x += 80;
         }
+        obstacle_generation_x += 300;
     }
-
-    // if(Math.random() > 0.5) {
-
-    // }
 }
 
 function do_two_boxes_collide(b1, b2) {
@@ -714,6 +773,9 @@ function update(dt) {
     }
 
     obstacles.forEach(o => {
+        if(o.u) {
+            o.u(dt);
+        }
         if(do_two_boxes_collide(o, player_box) && o.i()) {
             deal_damage(1 / 5, 'a');
         }
@@ -767,7 +829,7 @@ function update(dt) {
         if(substage == 0 && stage_elapsed > 1) {
             add_dialogue_nl('[HYPERSPACE ANOMALY DETECTED] \n');
             add_dialogue_nl('# [STARTING SHIP AI] \n');
-            add_dialogue_nl('# # # Hello there, # I am OSCaR, your Onboard Ship Computer and Rectifier. Please standby... \n');
+            add_dialogue_nl('# # # Hello there, # I am OSCAR, your Onboard Ship Computational Analysis Reporter. Please standby... \n');
             // console.log(Array.from(dialogue_words_left));
             substage = 1;
         } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 2) {
