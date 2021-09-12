@@ -6,7 +6,7 @@ const canv = /** @type {HTMLCanvasElement} */ (document.getElementById('c'));
 const ctx = canv.getContext('2d');
 
 const height = 1000;
-const actual_height = 600;
+let actual_height = 600;
 let width;
 
 
@@ -104,7 +104,18 @@ const dialogue_rate = 0.08;
 
 let skip_dialogue_pressed = false;
 
+let graphics_mode = parseInt(localStorage['xav-space-js13k-graphics']); // 0 fancy, 1 normal, 2 basic
+if(![0, 1, 2].includes(graphics_mode)) {
+    graphics_mode = 1;
+}
+process_graphics_change();
+
 /* ======= Rendering ======= */
+function process_graphics_change() {
+    actual_height = [1000, 600, 300][graphics_mode];
+    recalculate_sizing();
+}
+
 function make_colour_string(r, g, b, a) {
     return `rgba(${r}, ${g}, ${b}, ${a})`;
 }
@@ -128,17 +139,22 @@ function dialogue_done_running() {
 }
 
 function render_stars() {
-    for(let i = 0; i < 800; ++i) {
+    for(let i = 0; i < [1200, 750, 200][graphics_mode]; ++i) {
         const offset = i ** 4.7;
         const x = (offset * 1.9 % 500) * width / 500;
         const y = (offset % 501) * height / 501;
         ctx.beginPath();
         const r = offset % 6 * Math.sin(i + elapsed_time * (i % 2 ? 0.9 : 0.8)) ** 2
-        ctx.arc(x, y, r / 2, 0, Math.PI * 2);
+        ctx.arc(x, y, r / 2 * [0.8, 1, 1.8][graphics_mode], 0, Math.PI * 2);
         const c = 42 * r;
         ctx.fillStyle = make_colour_string(c, c, c, c);
         ctx.fill();
     }
+}
+
+function make_font_name(font_size) {
+    // return `${Math.round(font_size)}px 'Press Start 2P', monospace`;
+    return `${font_size}px 'Press Start 2P', monospace`;
 }
 
 function render() {
@@ -253,13 +269,15 @@ function render() {
         ctx.fillStyle = make_colour_string(255, 255, 255, lerp(0, 1, stage_elapsed / 1 - 1));
         ctx.textAlign = 'center';
         ctx.textBaseline = 'hanging';
-        ctx.font = "52px 'Press Start 2P', monospace"
-        ctx.fillText("TODO: Find a name for this game", width / 2, 50);
+        ctx.font = make_font_name(68 + 16 * Math.sin(1.3 * elapsed_time - 1.3));
+        ctx.fillText("METAGRAV", width / 2, 50);
 
+        const body_offset = 0 // 12 * Math.sin(1.3 * elapsed_time);
         ctx.fillStyle = make_colour_string(255, 255, 255, lerp(0, 1, stage_elapsed / 1 - 2));
-        ctx.font = ctx.font.replace('52', '30');
-        ctx.fillText("Press [SPACE] to Start", width / 2, 400);
-        ctx.fillText("(I'm going to put some interesting stuff here)", width / 2, 600);
+        ctx.font = make_font_name(40);
+        ctx.fillText("Press [SPACE] to Start", width / 2, 300 + body_offset);
+        ctx.fillText(`AUDIO ${get_muted() ? 'MUTED' : 'ON'} (switch with [m])`, width / 2, 380 + body_offset);
+        ctx.fillText(`GRAPHICS ${['FANCY', 'NORMAL', 'BASIC'][graphics_mode]} (switch with [g])`, width / 2, 460 + body_offset);
     }
 
     // Render HUD
@@ -361,6 +379,10 @@ function init_audio() {
 function set_muted(muted) {
     window.localStorage['xav-space-js13k-mute'] = muted ? "y" : "";
     if(master_gain_node) master_gain_node.gain.value = muted ? 0 : 0.8;
+}
+
+function get_muted() {
+    return window.localStorage['xav-space-js13k-mute'] == 'y';
 }
 
 function do_audio_beep() {
@@ -603,9 +625,9 @@ function make_meteorite(x, y) {
             // TODO: combine this behaviour with the plasma field and and more points to the player ship
             const main_path = make_path_and_set_style();
             for(let i = 0; i < player_points.length; ++i) {
-                if(ctx.isPointInStroke(main_path, player_points[i][0] + player_x, player_points[i][1] + player_y)) {
-                    return true;
-                }
+                // if(ctx.isPointInStroke(main_path, player_points[i][0] + player_x, player_points[i][1] + player_y)) {
+                //     return true;
+                // }
                 if(ctx.isPointInPath(main_path,  player_points[i][0] + player_x, player_points[i][1] + player_y)) {
                     return true;
                 }
@@ -925,11 +947,16 @@ window.addEventListener('keydown', e => {
             last_non_reversed_keydown = elapsed_time;
             space_key_hit();
         }
-    }
-
-    else if(e.code == 'KeyQ') {
+    } else if(e.code == 'KeyQ') {
         set_stage(2); // TODO: Remove
         player_x = 0;
+    } else if(e.code == 'KeyM') {
+        set_muted(!get_muted());
+    } else if(e.code == 'KeyG') {
+        graphics_mode += 1;
+        graphics_mode %= 3;
+        localStorage['xav-space-js13k-graphics'] = graphics_mode;
+        process_graphics_change();
     }
 });
 
