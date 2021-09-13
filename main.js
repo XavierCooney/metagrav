@@ -68,7 +68,8 @@ let regenerator_repaired = false;
 
 let boss_y = height / 2;
 var boss_x_screen;
-
+let boss_last_action = -Infinity;
+let boss_phase = 0;
 
 
 const TOP_BAR = 22;
@@ -106,7 +107,7 @@ const time_between_exhausts = 0.2;
 let obstacles = [];
 let obstacle_generation_x = 600;
 let lasers = []; // {x: number, y: number}
-let laser_enabled = true;
+let laser_enabled = false;
 
 const dialogue_box_width = 700;
 const dialogue_box_margin = 50;
@@ -138,7 +139,7 @@ let dialogue_lines_done = [];
 let characters_to_add_to_line = [];
 let dialogue_words_left = [];
 let start_of_empty_dialogue = Infinity;
-const stages_with_dialogue_screen = [1, 3, 5, 6, 8];
+const stages_with_dialogue_screen = [1, 3, 5, 6, 8, 10];
 let can_skip_dialogue = true;
 let need_space_to_proceed = false;
 
@@ -188,7 +189,7 @@ function coin_fill_col() {
 }
 
 function is_fade_away_stage() {
-    return stage == 5 || stage == 6 || stage == 8;
+    return stage == 5 || stage == 6 || stage == 8 || stage == 10;
 }
 function render_coin(x, y, eaten_t, translation_t) {
     if(is_fade_away_stage()) return; // darn I should've designed this better
@@ -218,7 +219,23 @@ function render_coin(x, y, eaten_t, translation_t) {
 
 function render_boss() {
     ctx.save();
-    ctx.globalAlpha = 0.3;
+    if(stage == 9) {
+        if(elapsed_time - boss_last_action < 1) {
+            ctx.globalAlpha = lerp(0, 0.15, elapsed_time - boss_last_action);
+        } else {
+            ctx.globalAlpha = lerp(0.15, 0, (elapsed_time - boss_last_action - 1) / 4);
+        }
+    } else if(boss_phase == 1) {
+        if(elapsed_time - boss_last_action < 1) {
+            ctx.globalAlpha = lerp(0, 0.7, elapsed_time - boss_last_action);
+        } else {
+            ctx.globalAlpha = lerp(0.7, 0, (elapsed_time - boss_last_action - 1) / 5);
+        }
+    } else {
+        ctx.restore();
+        return;
+    }
+
     ctx.translate(boss_x_screen, boss_y);
     ctx.beginPath();
     ctx.arc(120 * Math.sqrt(2) + 5, 0, 250, Math.PI * 3 / 4, Math.PI * 5 / 4, true);
@@ -561,7 +578,7 @@ function do_laser_beep() {
     node.start(audio_ctx.currentTime);
     node.stop(end_time);
     const gain_node = audio_ctx.createGain();
-    gain_node.gain.setValueAtTime(0.3, audio_ctx.currentTime);
+    gain_node.gain.setValueAtTime(0.2, audio_ctx.currentTime);
     gain_node.gain.exponentialRampToValueAtTime(0.01, end_time);
     node.connect(gain_node).connect(master_gain_node);
 }
@@ -949,6 +966,12 @@ function coin_collected() {
                 set_stage(6);
             } else if(stage == 7) {
                 set_stage(8);
+            } else if(stage == 9) {
+                set_stage(10);
+            }
+        } else if(stage == 9) {
+            if([5, 10, 15, 20].includes(coins_gotten)) {
+                boss_last_action = elapsed_time;
             }
         }
     }
@@ -1149,7 +1172,7 @@ function update(dt) {
     } else if(stage == 6) {
         reset_y_pos(dt);
 
-        if(substage == 0 && stage_elapsed > 2) {
+        if(substage == 0 && stage_elapsed > 1.5) {
             coins_gotten = 0;
             norm_dialogue_next();
             add_dialogue("Great work! Now I should be able to to repair the hull regenerator...");
@@ -1165,17 +1188,33 @@ function update(dt) {
     } else if(stage == 8) {
         reset_y_pos(dt);
 
-        if(substage == 0 && stage_elapsed > 2) {
+        if(substage == 0 && stage_elapsed > 1.5) {
             coins_gotten = 0;
             norm_dialogue_next();
-            add_dialogue_nl("Brilliant! LASER time!! \n \n # # # # Ummm, sorry, but I slightly exaggerated the need to repair the LASER. It isn't going to be particularly useful, but LASERs are so fun! # # Pew # pew # pew # pew! # # Anyway...");
+            add_dialogue_nl("Brilliant! LASER time!! \n \n # # Ummm, sorry, but I slightly exaggerated the need to repair the LASER. It isn't going to be particularly useful, but LASERs are so fun! # # Pew # pew # pew # pew! # # Anyway...");
         } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 0.1) {
             norm_dialogue_next();
             laser_enabled = true;
-            add_dialogue_nl("I've wired up the LASER activation control to the same [SPACE] button on your key matrix to keep things simple. But really, it won't be of much use. The last things to collect are the golden hyperdrive bundles, and then we should be able to jump out of here.");
+            add_dialogue_nl("I've wired up the LASER activation control to the same [SPACE] button on your key matrix to keep things simple. But really, it won't be of much use. The last parts to collect are the golden hyperdrive bundles, and then we should be able to jump out of here.");
         } else if(substage == 2 && elapsed_time - start_of_empty_dialogue > 0.1) {
             obstacles = [];
+            set_stage(9);
+        }
+    } else if(stage == 10) {
+        reset_y_pos(dt);
+
+        if(substage == 0 && stage_elapsed > 1.9) {
+            coins_gotten = 0;
             norm_dialogue_next();
+            add_dialogue_nl("Great job! # Now all I have to do is enable the hyperdri-");
+        } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            obstacles = [];
+            boss_last_action = elapsed_time;
+            boss_phase = 1;
+            substage = 2;
+        } else if(substage == 2 && boss_phase == 2) {
+            norm_dialogue_next();
+            add_dialogue_nl("What's that!? It just shot at us! If it hits the ship as we go into hyperspeed, we'll definitely explode. Before we leave this planet, you'll need to make sure that thing is dead.");
         }
     } else if(stage > 0) {
         if(grav_direction == 0) grav_direction = 1;
@@ -1188,6 +1227,12 @@ function update(dt) {
         } else if(substage == 1 && obstacles.length === 0) {
             set_stage(3);
         }
+    }
+
+    // Handle boss
+    if(boss_phase == 1) {
+        // Frighten player
+        boss_y = lerp(2 * height / 3, -300, (elapsed_time - boss_last_action) / 6);
     }
 }
 
@@ -1209,6 +1254,9 @@ function set_stage(new_stage) {
     } else if(new_stage == 7) {
         coins_needed = 20;
         regenerator_repaired = true;
+    } else if(new_stage == 9) {
+        coins_needed = 25;
+        laser_enabled = true;
     }  else {
         coins_needed = 0;
     }
@@ -1298,7 +1346,7 @@ window.addEventListener('keydown', e => {
             space_key_hit();
         }
     } else if(e.code == 'KeyQ') {
-        set_stage(7); // TODO: Remove
+        set_stage(9); // TODO: Remove
         player_x = 0;
     } else if(e.code == 'KeyM') {
         set_muted(!get_muted());
