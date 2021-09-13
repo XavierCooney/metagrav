@@ -1,6 +1,7 @@
 # METAGRAV
 
-I'm going to make a postmortem pretty soon so stay tuned here!
+See [the entry page here](https://js13kgames.com/entries/metagrav). It ended up as 8183 bytes.
+I'm going to make a postmortem pretty soon so stay tuned, it should be up in at least a couple of days!
 
 # Description
 

@@ -8,7 +8,7 @@ def compile_closure(js_source):
     p = subprocess.run([
         'java', '-jar', 'closure-compiler.jar',
         '--compilation_level', 'ADVANCED_OPTIMIZATIONS',
-        '--language_out', 'ECMASCRIPT_2021'
+        '--language_out', 'ECMASCRIPT_2019'
     ], input=js_source.encode('utf-8'), capture_output=True)
     if p.stderr:
         print("\tClosure stderr:", p.stderr)
