@@ -70,6 +70,10 @@ let boss_y = height / 2;
 var boss_x_screen;
 let boss_last_action = -Infinity;
 let boss_phase = 0;
+let last_boss_laser_fire = -Infinity;
+
+let boss_health = 1;
+let boss_last_damaged = -Infinity;
 
 
 const TOP_BAR = 22;
@@ -139,7 +143,7 @@ let dialogue_lines_done = [];
 let characters_to_add_to_line = [];
 let dialogue_words_left = [];
 let start_of_empty_dialogue = Infinity;
-const stages_with_dialogue_screen = [1, 3, 5, 6, 8, 10];
+const stages_with_dialogue_screen = [1, 3, 5, 6, 8, 10, 12];
 let can_skip_dialogue = true;
 let need_space_to_proceed = false;
 
@@ -189,7 +193,7 @@ function coin_fill_col() {
 }
 
 function is_fade_away_stage() {
-    return stage == 5 || stage == 6 || stage == 8 || stage == 10;
+    return stage == 5 || stage == 6 || stage == 8 || stage == 10 || stage == 12;
 }
 function render_coin(x, y, eaten_t, translation_t) {
     if(is_fade_away_stage()) return; // darn I should've designed this better
@@ -217,30 +221,65 @@ function render_coin(x, y, eaten_t, translation_t) {
     ctx.restore();
 }
 
-function render_boss() {
-    ctx.save();
+function get_boss_alpha() {
+    if(elapsed_time - boss_last_damaged < 0.1) {
+        return 1;
+    }
+
     if(stage == 9) {
         if(elapsed_time - boss_last_action < 1) {
-            ctx.globalAlpha = lerp(0, 0.15, elapsed_time - boss_last_action);
+            return lerp(0, 0.08, elapsed_time - boss_last_action);
         } else {
-            ctx.globalAlpha = lerp(0.15, 0, (elapsed_time - boss_last_action - 1) / 4);
+            return lerp(0.08, 0, (elapsed_time - boss_last_action - 1) / 4);
         }
     } else if(boss_phase == 1) {
         if(elapsed_time - boss_last_action < 1) {
-            ctx.globalAlpha = lerp(0, 0.7, elapsed_time - boss_last_action);
+            return lerp(0, 0.7, elapsed_time - boss_last_action);
         } else {
-            ctx.globalAlpha = lerp(0.7, 0, (elapsed_time - boss_last_action - 1) / 5);
+            return lerp(0.7, 0, (elapsed_time - boss_last_action - 1) / 5);
         }
+    } else if(stage == 0) {
+        return 0.002;
+    } else if([4, 5, 6, 7, 8].includes(boss_phase)) {
+        if(elapsed_time - boss_last_action < 0.5) {
+            return lerp(0, 0.9, elapsed_time - boss_last_action);
+        } else {
+            return lerp(0.9, 0, (elapsed_time - boss_last_action - 0.5) / 6.5);
+        }
+    } else if(boss_phase == 10) {
+        return lerp(0.3, 0, (elapsed_time - boss_last_action) / 1);
     } else {
+        return 0;
+    }
+}
+
+let boss_path = null;
+
+function render_boss() {
+    ctx.save();
+    const boss_alpha = get_boss_alpha();
+
+    if(boss_alpha == 0) {
+        boss_path = null;
         ctx.restore();
         return;
     }
 
-    ctx.translate(boss_x_screen, boss_y);
-    ctx.beginPath();
-    ctx.arc(120 * Math.sqrt(2) + 5, 0, 250, Math.PI * 3 / 4, Math.PI * 5 / 4, true);
+    ctx.globalAlpha = boss_alpha;
+
+    ctx.translate(boss_x_screen, boss_y + lerp(rlerp(-20, 20), 0, (elapsed_time - boss_last_damaged) / 2));
+
+    if(boss_phase == 1) {
+        ctx.rotate(Math.PI);
+        ctx.translate(boss_x_screen - 300, 0);
+    }
+
+    const head_path = new Path2D();
+    head_path.arc(120 * Math.sqrt(2) + 5, 0, 250, Math.PI * 3 / 4, Math.PI * 5 / 4, true);
     ctx.fillStyle = '#b400eb';
-    ctx.fill();
+    ctx.fill(head_path);
+    boss_path = head_path;
+
     // ctx.globalCompositeOperation = 'source-in';
     ctx.beginPath();
     ctx.moveTo(0, -180);
@@ -312,9 +351,6 @@ function render() {
     ctx.save();
     ctx.translate(-cam_x, 0);
     ctx.save();
-    if(is_fade_away_stage()) {
-        ctx.globalAlpha = lerp(1, 0, stage_elapsed * 0.8);
-    }
     lasers.forEach(laser => {
         ctx.beginPath();
         ctx.moveTo(laser.x, laser.y);
@@ -322,19 +358,22 @@ function render() {
             ctx.lineTo(laser.x + i, laser.y + 6 * Math.sin((laser.x + i) / laser.l));
         }
         ctx.lineWidth = 2;
-        ctx.strokeStyle = '#00ff26';
+        ctx.strokeStyle = !laser.f ? '#bc42f5' : '#00ff26';
         ctx.stroke();
     });
+    if(is_fade_away_stage()) {
+        ctx.globalAlpha = lerp(1, 0, stage_elapsed * 0.8);
+    }
     obstacles.forEach(o => {
         o.r();
     });
 
     // Render obstacle hitboxes debug bounding
-    obstacles.forEach(o => {
-        ctx.strokeStyle = '#F00';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(o.x, o.y, o.w, o.h);
-    });
+    // obstacles.forEach(o => {
+    //     ctx.strokeStyle = '#F00';
+    //     ctx.lineWidth = 2;
+    //     ctx.strokeRect(o.x, o.y, o.w, o.h);
+    // });
     ctx.restore();
     ctx.restore();
 
@@ -428,6 +467,11 @@ function render() {
         ctx.fillText(`A game by Xavier Cooney for js13k-games`, width / 2, 620 + body_offset); // :]
     }
 
+    ctx.save();
+    ctx.translate(-hud_x, 0);
+    render_boss();
+    ctx.restore();
+
     // Render HUD
     if(![0, 1].includes(stage) && hud_x > 0) {
         ctx.fillStyle = '#111';
@@ -456,8 +500,6 @@ function render() {
     }
 
     ctx.translate(-hud_x, 0);
-
-    render_boss();
 
     // Render dialogue
     if(stages_with_dialogue_screen.includes(stage)) {
@@ -642,7 +684,7 @@ function do_music_for_channel(channel) {
         const duration = 60 * rand_element_form_arr([1, 1, 1, 1, 0.5, 2]) / music_bpm;
         node.stop(channel_time_till[channel] + duration + 0.03);
         const gain_node = audio_ctx.createGain();
-        gain_node.gain.setValueAtTime(channel ? 0.7 : 0.1, channel_time_till[channel]);
+        gain_node.gain.setValueAtTime(channel ? 0.6 : 0.065, channel_time_till[channel]);
         gain_node.gain.linearRampToValueAtTime(0.03, channel_time_till[channel] + duration);
         node.connect(gain_node).connect(master_gain_node);
         channel_time_till[channel] += duration;
@@ -688,10 +730,10 @@ function reset_y_pos(dt) {
 }
 
 function deal_damage(damage, reason) {
-    if(elapsed_time - last_explosion_time < 2 || is_fade_away_stage()) {
+    if(elapsed_time - last_explosion_time < 2 || (is_fade_away_stage() && stage != 10)) {
         return;
     }
-    if(stage == 2 || stages_with_dialogue_screen.includes(stage)) {
+    if(stage == 2 || stages_with_dialogue_screen.includes(stage) || boss_phase == 10) {
         // you can never die in stage 2 or when there's dialogue on screen
         player_health *= (1 - damage);
         player_health = Math.max(player_health, 0.05);
@@ -705,6 +747,41 @@ function deal_damage(damage, reason) {
     }
 
     cause_explosion();
+}
+
+function do_injured_sound(f) {
+    const end_time = audio_ctx.currentTime + 5;
+    const node = audio_ctx.createOscillator();
+    node.type = 'sine';
+    node.frequency.value = 450 * f + 5 * Math.random();
+    node.frequency.exponentialRampToValueAtTime(430 * f + 3 * Math.random(), end_time);
+    node.start(audio_ctx.currentTime);
+    node.stop(end_time);
+    const gain_node = audio_ctx.createGain();
+    gain_node.gain.setValueAtTime(0.9, audio_ctx.currentTime);
+    gain_node.gain.exponentialRampToValueAtTime(0.0001, end_time);
+    node.connect(gain_node).connect(master_gain_node);
+}
+
+function boss_hurt() {
+    if(elapsed_time - boss_last_damaged < 3) {
+        return;
+    }
+    boss_last_damaged = elapsed_time;
+    boss_health -= 1 / 6;
+    if(boss_health <= 0) {
+        boss_health = 0;
+        boss_phase = 10;
+        boss_last_action = elapsed_time;
+        audio_sound_explosion();
+    }
+
+    // do_injured_sound(1 / Math.sqrt(2));
+    do_injured_sound(1);
+    do_injured_sound(Math.sqrt(2));
+    do_injured_sound(2);
+    do_injured_sound(2 * Math.sqrt(2));
+    // do_injured_sound(4);
 }
 
 let player_died_from_stage;
@@ -866,7 +943,7 @@ function make_coin(x, y) {
         // There's no guarentees in life
         return;
     }
-    if(stage == 2) return;
+    if(stage == 2 || stage == 11) return;
 
     let time_eaten = Infinity;
     let has_been_eaten = false;
@@ -970,7 +1047,7 @@ function coin_collected() {
                 set_stage(10);
             }
         } else if(stage == 9) {
-            if([5, 10, 15, 20].includes(coins_gotten)) {
+            if([4, 8, 10, 12].includes(coins_gotten)) {
                 boss_last_action = elapsed_time;
             }
         }
@@ -981,7 +1058,10 @@ function update(dt) {
     elapsed_time += dt;
     stage_elapsed += dt;
 
-    if(stage == 0) return;
+    if(stage == 0) {
+        boss_y = 500 + 50 * Math.sin(elapsed_time / 3);
+        return;
+    }
 
     if(elapsed_time - last_exhaust_emission > time_between_exhausts) {
         [-35, 35].forEach(dy => {
@@ -1010,13 +1090,15 @@ function update(dt) {
     player_y_velocity += grav_direction * dt * 1000;
     player_y += player_y_velocity * dt;
 
-    if(player_y < 60) {
-        player_y = 60;
-        player_y_velocity = 0;
-    } else if(player_y < 120) {
-        // player_y_velocity += dt * 20000 / Math.pow(player_y - 59, 2);
-        if(player_y_velocity < 0) {
-            player_y_velocity += -15 * dt * player_y_velocity;
+    if(stage != 12) {
+        if(player_y < 60) {
+            player_y = 60;
+            player_y_velocity = 0;
+        } else if(player_y < 120) {
+            // player_y_velocity += dt * 20000 / Math.pow(player_y - 59, 2);
+            if(player_y_velocity < 0) {
+                player_y_velocity += -15 * dt * player_y_velocity;
+            }
         }
     }
 
@@ -1034,17 +1116,22 @@ function update(dt) {
         h: 80
     }
 
-    obstacles.forEach(o => {
-        if(o.u) {
-            o.u(dt);
-        }
-        if(do_two_boxes_collide(o, player_box) && o.i()) {
-            // wat
-        }
-    });
+    if(!is_fade_away_stage()) {
+        obstacles.forEach(o => {
+            if(o.u) {
+                o.u(dt);
+            }
+            if(do_two_boxes_collide(o, player_box) && o.i()) {
+                // wat
+            }
+        });
+    }
 
     lasers.forEach(l => {
         l.u(l, dt);
+    });
+    lasers = lasers.filter(l => {
+        return l.w > -10 && l.x - cam_x < width + 500 && l.x + l.w - cam_x > -500;
     });
 
     while(lasers.length) {
@@ -1076,7 +1163,7 @@ function update(dt) {
     }
 
     if(regenerator_repaired && stage != 5) {
-        player_health += dt / 120;
+        player_health += dt / (stage == 11 ? 60 : 80);
         player_health = Math.min(player_health, 1);
     }
 
@@ -1214,7 +1301,29 @@ function update(dt) {
             substage = 2;
         } else if(substage == 2 && boss_phase == 2) {
             norm_dialogue_next();
-            add_dialogue_nl("What's that!? It just shot at us! If it hits the ship as we go into hyperspeed, we'll definitely explode. Before we leave this planet, you'll need to make sure that thing is dead.");
+            add_dialogue_nl("What the volt was that!? It just shot at us! If it hits the ship as we go into hyperspeed, we'll definitely explode. \n \n Before we leave this planet, you'll need to make sure that thing is dead. I guess repairing the LASER was a good idea after all. After 5 cries it should be finished.");
+        } else if(substage == 3 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            obstacles = [];
+            set_stage(11);
+            boss_last_action = elapsed_time;
+        }
+    } else if(stage == 12) {
+        if(substage == 0 || substage == 1) {
+            reset_y_pos(dt);
+        }
+
+        if(substage == 0 && stage_elapsed > 1.9) {
+            reset_y_pos(dt);
+            coins_gotten = 0;
+            norm_dialogue_next();
+            add_dialogue_nl("It's dead!! # # # I may have made a slight error though. # I think it was trying to communicate with us, my database shows this species use purple wavelengths as a substitute for speech. It didn't know it was hurting us. Whoops.");
+        } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            norm_dialogue_next();
+            add_dialogue_nl("Congratulations player! The hyperdrive is repaird and your craft is now able to enter hyperspeed. \n \n Thanks for playing. Game made by Xavier Cooney, with sage advice from Gus. Feel free to reach out on my Github for feedback, etc.");
+        } else if(substage == 2 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            player_y_velocity = 0;
+            grav_direction = 0;
+            player_y -= 200 * dt;
         }
     } else if(stage > 0) {
         if(grav_direction == 0) grav_direction = 1;
@@ -1230,9 +1339,44 @@ function update(dt) {
     }
 
     // Handle boss
-    if(boss_phase == 1) {
+    /* if(stage == 0) {
+        // uggghhh
+        // boss_y = 500 + 200 * Math.sin(elapsed_time / 3);
+    } */ if(boss_phase == 1) {
         // Frighten player
         boss_y = lerp(2 * height / 3, -300, (elapsed_time - boss_last_action) / 6);
+        if(elapsed_time - last_boss_laser_fire > 1 / 5) {
+            last_boss_laser_fire = elapsed_time;
+            shoot_laser(cam_x + 160, boss_y, 1, false);
+        }
+        if(elapsed_time - boss_last_action > 6) {
+            boss_phase = 2;
+        }
+    } else if(boss_phase == 10) {
+        if(elapsed_time - boss_last_action > 2) {
+            set_stage(12);
+            boss_phase = -1;
+        }
+    } else if(stage == 11) {
+        if(elapsed_time - boss_last_action > 9) {
+            let possible_phases = [3, 4, 5, 6, 7, 8].filter(p => p != boss_phase);
+            boss_phase = possible_phases[Math.floor(possible_phases.length * Math.random())];
+            // console.log(boss_phase);
+            boss_last_action = elapsed_time;
+        }
+        if(elapsed_time - last_boss_laser_fire > 1 / 3 && [6, 7].includes(boss_phase) && elapsed_time - boss_last_action > 0.5 && elapsed_time - boss_last_action < 6.5) {
+            last_boss_laser_fire = elapsed_time;
+            shoot_laser(boss_x_screen + cam_x, boss_y, -1, false);
+        }
+        if(boss_phase == 3) {
+            boss_y = -1000;
+        } else if(boss_phase == 4 || boss_phase == 6) {
+            boss_y = lerp(-300, 900, (elapsed_time - boss_last_action) / 7);
+        } else if(boss_phase == 5) {
+            boss_y = lerp(900, -300, (elapsed_time - boss_last_action) / 7);
+        } else if(boss_phase == 7 || boss_phase == 8) {
+            boss_y = player_y;
+        }
     }
 }
 
@@ -1250,12 +1394,12 @@ function set_stage(new_stage) {
     }
 
     if(new_stage == 4) {
-        coins_needed = 10;
+        coins_needed = 8;
     } else if(new_stage == 7) {
-        coins_needed = 20;
+        coins_needed = 12;
         regenerator_repaired = true;
     } else if(new_stage == 9) {
-        coins_needed = 25;
+        coins_needed = 16;
         laser_enabled = true;
     }  else {
         coins_needed = 0;
@@ -1288,23 +1432,26 @@ function frame() {
 
 frame();
 
-function shoot_laser() {
+function shoot_laser(from_x, from_y, direction, friendly) {
     // if(lasers.length && player_x + 80 >= lasers[lasers.length - 1].x) return;
     let collision_x = null;
 
     lasers.push({
-        x: player_x,
-        y: player_y,
+        x: direction == -1 ? from_x - 80 : from_x,
+        y: from_y,
         w: 80,
         l: 5,
+        f: friendly,
         u: (l, dt) => {
             if(collision_x !== null) {
-                l.x += dt * 700;
+                l.x += direction * dt * 700;
                 l.w -= dt * 900;
             } else {
-                l.x += dt * 700;
+                l.x += direction * dt * 700;
                 l.w += dt * 100;
             }
+
+            if(collision_x !== null) return;
 
             obstacles.forEach(plasma => {
                 if(!plasma.lh) return;
@@ -1313,6 +1460,24 @@ function shoot_laser() {
                     collision_x = true;
                 }
             });
+
+            if(!friendly) {
+                const x_spot = direction == 1 ? l.x + l.w : l.x;
+                const player_y_margin = stage == 9 ? 35 : 25;
+                if(player_x - 70 < x_spot && x_spot < player_x + 20 && player_y - player_y_margin < l.y && l.y < player_y + player_y_margin) {
+                    // hit
+                    collision_x = true;
+                    deal_damage(1 / 15, 'boss');
+                }
+            } else {
+                if(get_boss_alpha() > 0.05 && boss_path !== null) {
+                    if(ctx.isPointInPath(boss_path, l.x + l.w - cam_x - boss_x_screen, l.y - boss_y)) {
+                        collision_x = true;
+                        // console.log('boss hit!!!');
+                        boss_hurt();
+                    }
+                }
+            }
         }
     });
     do_laser_beep();
@@ -1332,7 +1497,7 @@ function space_key_hit() {
     } else {
         do_grav_switch();
         if(laser_enabled) {
-            shoot_laser();
+            shoot_laser(player_x, player_y, 1, true);
         }
     }
 }
@@ -1346,8 +1511,10 @@ window.addEventListener('keydown', e => {
             space_key_hit();
         }
     } else if(e.code == 'KeyQ') {
-        set_stage(9); // TODO: Remove
-        player_x = 0;
+        // set_stage(12); // TODO: Remove
+        // laser_enabled = true;
+        // player_x = 0;
+        player_x += 0;
     } else if(e.code == 'KeyM') {
         set_muted(!get_muted());
     } else if(e.code == 'KeyG') {
