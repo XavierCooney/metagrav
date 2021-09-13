@@ -101,6 +101,7 @@ const time_between_exhausts = 0.2;
 let obstacles = [];
 let obstacle_generation_x = 600;
 let lasers = []; // {x: number, y: number}
+let laser_enabled = true;
 
 const dialogue_box_width = 700;
 const dialogue_box_margin = 50;
@@ -242,13 +243,23 @@ function render() {
     }
 
 
-    // Render obstacles
+    // Render obstacles + render lasers
     ctx.save();
     ctx.translate(-cam_x, 0);
     ctx.save();
     if(is_fade_away_stage()) {
         ctx.globalAlpha = lerp(1, 0, stage_elapsed * 0.8);
     }
+    lasers.forEach(laser => {
+        ctx.beginPath();
+        ctx.moveTo(laser.x, laser.y);
+        for(let i = 0; i <= laser.w; i += 2) {
+            ctx.lineTo(laser.x + i, laser.y + 6 * Math.sin((laser.x + i) / laser.l));
+        }
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#00ff26';
+        ctx.stroke();
+    });
     obstacles.forEach(o => {
         o.r();
     });
@@ -305,6 +316,19 @@ function render() {
         ctx.lineWidth = 5;
         ctx.fill();
         ctx.stroke();
+
+        if(laser_enabled) {
+            ctx.beginPath();
+            ctx.moveTo(30, 0);
+            ctx.lineTo(20, 20 / 3);
+            ctx.lineTo(20, -20 / 3);
+            ctx.closePath();
+            ctx.fillStyle = '#00ff26';
+            ctx.strokeStyle = '#00ff26';
+            ctx.fill();
+            ctx.stroke();
+        }
+
         ctx.fillStyle = '#3BE';
         ctx.fillRect(-6, -8, 10, 16);
         if(grav_direction == 0) {
@@ -336,7 +360,7 @@ function render() {
         ctx.fillText("Press [SPACE] to Start", width / 2, 300 + body_offset);
         ctx.fillText(`AUDIO ${get_muted() ? 'MUTED' : 'ON'} (switch with [m])`, width / 2, 380 + body_offset);
         ctx.fillText(`GRAPHICS ${['FANCY', 'NORMAL', 'BASIC'][graphics_mode]} (switch with [g])`, width / 2, 460 + body_offset);
-        ctx.fillText(`A game by Xavier Cooney for js13k`, width / 2, 620 + body_offset); // :]
+        ctx.fillText(`A game by Xavier Cooney for js13k-games`, width / 2, 620 + body_offset); // :]
     }
 
     // Render HUD
@@ -464,30 +488,64 @@ function do_audio_beep() {
     dialogue_beep_gain.gain.linearRampToValueAtTime(0, audio_ctx.currentTime + dialogue_beep_duration);
 }
 
+function do_coin_collect_beep() {
+    const end_time = audio_ctx.currentTime + 0.3;
+    const node = audio_ctx.createOscillator();
+    node.type = 'square';
+    node.frequency.value = 440;
+    node.frequency.exponentialRampToValueAtTime(3520, end_time);
+    node.start(audio_ctx.currentTime);
+    node.stop(end_time);
+    const gain_node = audio_ctx.createGain();
+    gain_node.gain.setValueAtTime(1, audio_ctx.currentTime);
+    gain_node.gain.exponentialRampToValueAtTime(0.01, end_time);
+    node.connect(gain_node).connect(master_gain_node);
+}
+
+function do_laser_beep() {
+    const end_time = audio_ctx.currentTime + 0.3;
+    const node = audio_ctx.createOscillator();
+    node.type = 'sawtooth';
+    node.frequency.value = 880;
+    node.frequency.exponentialRampToValueAtTime(110, end_time);
+    node.start(audio_ctx.currentTime);
+    node.stop(end_time);
+    const gain_node = audio_ctx.createGain();
+    gain_node.gain.setValueAtTime(0.3, audio_ctx.currentTime);
+    gain_node.gain.exponentialRampToValueAtTime(0.01, end_time);
+    node.connect(gain_node).connect(master_gain_node);
+}
+
+let explosion_buffer = null;
+
 function audio_sound_explosion() {
     const duration = 1.5;
     const buffer_size = audio_ctx.sampleRate * duration;
-    const buffer = audio_ctx.createBuffer(1, buffer_size, audio_ctx.sampleRate);
-    let data = buffer.getChannelData(0);
+    if(explosion_buffer === null) {
+        const buffer = audio_ctx.createBuffer(1, buffer_size, audio_ctx.sampleRate);
 
-    let phase = 0;
-    let last_sample = 0;
+        let data = buffer.getChannelData(0);
 
-    for (let i = 0; i < buffer_size; i++) {
-        const t = i / audio_ctx.sampleRate;
-        const frequency = 1200 * Math.pow(0.5, t);
-        phase += frequency / audio_ctx.sampleRate;
-        // if(i % 1e4 == 0) console.log(frequency / audio_ctx.sampleRate);
+        let phase = 0;
+        let last_sample = 0;
 
-        if(phase > 1) {
-            phase -= Math.floor(phase);
-            last_sample = rlerp(-1, 1);
+        for (let i = 0; i < buffer_size; i++) {
+            const t = i / audio_ctx.sampleRate;
+            const frequency = 1200 * Math.pow(0.5, t);
+            phase += frequency / audio_ctx.sampleRate;
+
+            if(phase > 1) {
+                phase -= Math.floor(phase);
+                last_sample = rlerp(-1, 1);
+            }
+            data[i] = last_sample;
         }
-        data[i] = last_sample;
+
+        explosion_buffer = buffer;
     }
 
     let noise = audio_ctx.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = explosion_buffer;
 
     let bandpass = audio_ctx.createBiquadFilter();
     bandpass.type = 'lowpass';
@@ -507,7 +565,7 @@ const channel_time_till = [0, 0];
 
 function do_music_for_channel(channel) {
     while(channel_time_till[channel] - audio_ctx.currentTime < 10) {
-        // This may be major pentatonic idk please correct me iff wrong
+        // This turned out not to be major pentatonic (missing a third??)
         const notes_to_choose_from = [1, 1.5, 0.75, 1.125, 2 / 3];
         const random_ratio = rand_element_form_arr(notes_to_choose_from);
         const node = audio_ctx.createOscillator();
@@ -591,10 +649,17 @@ function player_died() {
 
 function make_plasma_obstacle(y_top, h) {
     const x = obstacle_generation_x;
+    let last_laser_hit = -1;
 
     function get_internal_colouring() {
         const colour_offset = 40 * Math.sin(elapsed_time * 3 + x);
-        return make_colour_string(210 + colour_offset, 54, 228 + colour_offset, 1);
+        const green_t = (elapsed_time - last_laser_hit) / 3;
+        return make_colour_string(
+            lerp(89, 210 + colour_offset, green_t),
+            lerp(228, 54, green_t),
+            lerp(54, 228 + colour_offset, green_t),
+            1
+        );
     }
 
     function make_path_and_set_style() {
@@ -630,13 +695,10 @@ function make_plasma_obstacle(y_top, h) {
                 ctx.fill();
             }
 
-            ctx.fillStyle = get_internal_colouring() // '#3d36ff' // '#4d36ff';
+            ctx.fillStyle = get_internal_colouring();
             let circle_radius = lerp(16, 12, 0.5 + 0.5 * Math.cos((player_x - x) / 100));
             render_circ(y_top, circle_radius);
             render_circ(y_top + h, circle_radius);
-            // ctx.fillStyle = get_internal_colouring();
-            // render_circ(y_top + 10, 10);
-            // render_circ(y_top + h - 10, 10);
 
             const main_path = make_path_and_set_style();
             ctx.stroke(main_path);
@@ -651,7 +713,13 @@ function make_plasma_obstacle(y_top, h) {
                     deal_damage(1 / 4, 'plasma');
                 }
             };
-        }
+        },
+        lh: () => { // laser hit
+            last_laser_hit = elapsed_time;
+        },
+        lhy: y_top,
+        lhh: h,
+        lhx: x
     };
 }
 
@@ -797,7 +865,7 @@ function generate_obstacle() {
             if(Math.random() > 0.5) {
                 new_y = 840 - new_y;
             }
-            if(new_y > 100 && new_y < 740 && Math.random() > 0.9) {
+            if(new_y > 100 && new_y < 740 && Math.random() > 0.85) {
                 obstacle_generation_x += 80;
                 make_coin(obstacle_generation_x, new_y);
                 obstacle_generation_x += 120;
@@ -824,6 +892,7 @@ function norm_dialogue_next() {
 function coin_collected() {
     if(!stages_with_dialogue_screen.includes(stage) && !is_fade_away_stage()) {
         coins_gotten += 1;
+        do_coin_collect_beep();
 
         if(coins_gotten == coins_needed) {
             if(stage == 4) {
@@ -900,6 +969,18 @@ function update(dt) {
             // wat
         }
     });
+
+    lasers.forEach(l => {
+        l.u(l, dt);
+    });
+
+    while(lasers.length) {
+        if(lasers[0].x - cam_x > width + 20) {
+            lasers.shift();
+        } else {
+            break;
+        }
+    }
 
     while(obstacles.length && obstacles[0].x + obstacles[0].w < cam_x) {
         obstacles.shift();
@@ -1036,7 +1117,13 @@ function update(dt) {
         if(substage == 0 && stage_elapsed > 2) {
             coins_gotten = 0;
             norm_dialogue_next();
-            add_dialogue("Brilliant! LASER time!! # # # Also, sorry, but I slightly exaggerated the need to repair the space LASER. It's just my circuits really like shooting LASERs. Anyway...");;
+            add_dialogue("Brilliant! LASER time!! \n \n # # # # Ummm, sorry, but I slightly exaggerated the need to repair the LASER. It isn't going to be particularly useful, but LASERs are so fun! # # Pew # pew # pew # pew! Anyway...");
+        } else if(substage == 1 && elapsed_time - start_of_empty_dialogue) {
+            norm_dialogue_next();
+            laser_enabled = true;
+            add_dialogue("I've wired up the LASER activation control to the same [SPACE] button on your key matrix to keep things simple. But really, it won't be of much use. The last things to collect are golden hyperdrive bundles.");
+        } else if(substage == 2 && elapsed_time - start_of_empty_dialogue) {
+            norm_dialogue_next();
         }
     } else if(stage > 0) {
         if(grav_direction == 0) grav_direction = 1;
@@ -1101,6 +1188,36 @@ function frame() {
 
 frame();
 
+function shoot_laser() {
+    // if(lasers.length && player_x + 80 >= lasers[lasers.length - 1].x) return;
+    let collision_x = null;
+
+    lasers.push({
+        x: player_x,
+        y: player_y,
+        w: 80,
+        l: 5,
+        u: (l, dt) => {
+            if(collision_x !== null) {
+                l.x += dt * 700;
+                l.w -= dt * 900;
+            } else {
+                l.x += dt * 700;
+                l.w += dt * 100;
+            }
+
+            obstacles.forEach(plasma => {
+                if(!plasma.lh) return;
+                if(l.x < plasma.lhx && plasma.lhx < l.x + l.w && plasma.lhy < l.y && l.y < plasma.lhy + plasma.lhh) {
+                    plasma.lh();
+                    collision_x = true;
+                }
+            });
+        }
+    });
+    do_laser_beep();
+}
+
 function space_key_hit() {
     if(stages_with_dialogue_screen.includes(stage)) {
         if(dialogue_done_running()) {
@@ -1114,6 +1231,9 @@ function space_key_hit() {
         set_stage(1);
     } else {
         do_grav_switch();
+        if(laser_enabled) {
+            shoot_laser();
+        }
     }
 }
 
