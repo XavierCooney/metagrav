@@ -15,6 +15,7 @@ function recalculate_sizing() {
     canv.width = actual_width;
     canv.height = actual_height;
     width = actual_width * height / actual_height;
+    boss_x_screen = width - 150;
 }
 
 window.addEventListener('resize', recalculate_sizing);
@@ -64,6 +65,10 @@ let displayed_player_health = 1;
 let coins_gotten = 0;
 let coins_needed = 0;
 let regenerator_repaired = false;
+
+let boss_y = height / 2;
+var boss_x_screen;
+
 
 
 const TOP_BAR = 22;
@@ -208,6 +213,49 @@ function render_coin(x, y, eaten_t, translation_t) {
         ctx.arc(0, 0, lerp(i, 0, eaten_t), offset + 5 * Math.PI / 4, offset + 7 * Math.PI / 4, false);
         ctx.stroke();
     }
+    ctx.restore();
+}
+
+function render_boss() {
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.translate(boss_x_screen, boss_y);
+    ctx.beginPath();
+    ctx.arc(120 * Math.sqrt(2) + 5, 0, 250, Math.PI * 3 / 4, Math.PI * 5 / 4, true);
+    ctx.fillStyle = '#b400eb';
+    ctx.fill();
+    // ctx.globalCompositeOperation = 'source-in';
+    ctx.beginPath();
+    ctx.moveTo(0, -180);
+    ctx.quadraticCurveTo(-40, 0, 0, 180);
+
+    for(let side = 0; side <= 1; side++) {
+        for(let t = side ? 1 : 0; side ? (t > 0) : (t < 1); t += side ? -0.02 : 0.02) {
+            const offset_mutliplier = Math.sin(t * Math.PI);
+            const offset = 7 * offset_mutliplier * Math.sin(t * 10 + 5 * elapsed_time);
+            const x = lerp(0, 90, t);
+            const y = lerp(side ? -180 : 180, 0, t);
+            ctx.lineTo(
+                x + offset, y + offset * 70 / 120
+            );
+        }
+    }
+
+    ctx.closePath();
+    ctx.fillStyle = '#FFF';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#DDD';
+    ctx.lineWidth = 4;
+    ctx.fill();
+    // ctx.stroke();
+    ctx.clip();
+
+    ctx.fillStyle = '#329ba8';
+    ctx.beginPath();
+    const eye_up_down = Math.sin(elapsed_time);
+    ctx.arc(0, 30 * (eye_up_down > 0 ? 1 : -1) *  Math.pow(Math.abs(eye_up_down), 0.7), 40, 0, Math.PI * 2);
+    ctx.fill();
+
     ctx.restore();
 }
 
@@ -391,6 +439,8 @@ function render() {
     }
 
     ctx.translate(-hud_x, 0);
+
+    render_boss();
 
     // Render dialogue
     if(stages_with_dialogue_screen.includes(stage)) {
@@ -1033,7 +1083,7 @@ function update(dt) {
     if(stage == 1) {
         reset_y_pos(dt);
         player_y = height / 4;
-        if(substage == 0 && stage_elapsed > 2) {
+        if(substage == 0 && stage_elapsed > 1) {
             add_dialogue_nl('[HYPERSPACE ANOMALY DETECTED] \n');
             add_dialogue_nl('# [STARTING SHIP AI] \n');
             add_dialogue_nl('# # # Hello there, # I am OSCAR, your Onboard Ship Computational Analysis Reporter. Please standby... \n');
@@ -1108,6 +1158,7 @@ function update(dt) {
             regenerator_repaired = true;
             add_dialogue("Done! This should help with those meteorites that I probably should've warned you about. Next thing to fix is the ship's LASER, for that you'll need to collect green part bundles.");
         } else if(substage == 2 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            obstacles = [];
             set_stage(7);
         }
         reset_y_pos(dt);
@@ -1117,12 +1168,13 @@ function update(dt) {
         if(substage == 0 && stage_elapsed > 2) {
             coins_gotten = 0;
             norm_dialogue_next();
-            add_dialogue("Brilliant! LASER time!! \n \n # # # # Ummm, sorry, but I slightly exaggerated the need to repair the LASER. It isn't going to be particularly useful, but LASERs are so fun! # # Pew # pew # pew # pew! Anyway...");
-        } else if(substage == 1 && elapsed_time - start_of_empty_dialogue) {
+            add_dialogue_nl("Brilliant! LASER time!! \n \n # # # # Ummm, sorry, but I slightly exaggerated the need to repair the LASER. It isn't going to be particularly useful, but LASERs are so fun! # # Pew # pew # pew # pew! # # Anyway...");
+        } else if(substage == 1 && elapsed_time - start_of_empty_dialogue > 0.1) {
             norm_dialogue_next();
             laser_enabled = true;
-            add_dialogue("I've wired up the LASER activation control to the same [SPACE] button on your key matrix to keep things simple. But really, it won't be of much use. The last things to collect are golden hyperdrive bundles.");
-        } else if(substage == 2 && elapsed_time - start_of_empty_dialogue) {
+            add_dialogue_nl("I've wired up the LASER activation control to the same [SPACE] button on your key matrix to keep things simple. But really, it won't be of much use. The last things to collect are the golden hyperdrive bundles, and then we should be able to jump out of here.");
+        } else if(substage == 2 && elapsed_time - start_of_empty_dialogue > 0.1) {
+            obstacles = [];
             norm_dialogue_next();
         }
     } else if(stage > 0) {
